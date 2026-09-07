@@ -1,0 +1,67 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
+import * as THREE from 'three';
+
+registerHooks({resolve(specifier,context,nextResolve){
+  try{return nextResolve(specifier,context);}catch(error){
+    if(specifier.startsWith('.')&&!/\.[a-z]+$/i.test(specifier))return nextResolve(specifier+'.ts',context);
+    throw error;
+  }
+}});
+const {ArenaGame,INITIAL}=await import('../lib/game/engine.ts');
+const {makeSoldier}=await import('../lib/game/world.ts');
+const quiet={shot(){},hit(){},kill(){},reload(){},tone(){}};
+function harness(){
+  const g=Object.create(ArenaGame.prototype);
+  Object.assign(g,{state:{...INITIAL,phase:'playing',feed:[],bots:[]},options:{difficulty:'normal',sensitivity:1,sound:false},
+    scene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(76,1,.06,160),audio:quiet,
+    bots:[],effects:[],solid:[],guns:[new THREE.Group(),new THREE.Group()],gunRig:new THREE.Group(),
+    keys:new Set(),ammo:[{ammo:30,reserve:120},{ammo:12,reserve:60}],cooldown:0,reloadLeft:0,
+    recoil:0,clock:0,feedTimes:[],pitch:0,yaw:0,moving:false,aiming:false,
+    callback(){},resume(){this.state.phase='playing';},flashTime:0});
+  g.camera.position.set(0,1.15,8);g.camera.lookAt(0,1.15,0);g.camera.updateMatrixWorld(true);
+  return g;
+}
+function addBot(g,x=0,z=0){
+  const b={...makeSoldier(0),id:0,health:100,dead:0,cooldown:0,noticed:4,path:[],repath:1,walk:0,spawnShield:0,lastSeen:null};
+  b.root.position.set(x,0,z);b.targets.forEach(t=>t.userData.bot=0);g.bots.push(b);g.scene.add(b.root);return b;
+}
+test('starting a fresh round restores the rifle model after using the pistol',()=>{
+  const g=harness();g.state.weapon=1;g.guns[0].visible=false;g.guns[1].visible=true;
+  g.start(g.options);
+  assert.equal(g.state.weapon,0);assert.equal(g.guns[0].visible,true);assert.equal(g.guns[1].visible,false);
+  assert.equal(g.state.time,300);assert.equal(g.state.kills,0);assert.equal(g.state.health,100);
+});
+test('shooting resolves a real body hit and consumes one round',()=>{
+  const g=harness(),b=addBot(g);g.shoot();
+  assert.equal(b.health,71);assert.equal(g.state.ammo,29);assert.equal(g.state.hits,1);
+});
+test('a real wall intersection prevents damaging the soldier behind it',()=>{
+  const g=harness(),b=addBot(g);const wall=new THREE.Mesh(new THREE.BoxGeometry(5,4,1),new THREE.MeshBasicMaterial());
+  wall.position.set(0,2,4);g.scene.add(wall);g.solid.push(wall);g.shoot();
+  assert.equal(b.health,100);assert.equal(g.state.hits,0);assert.equal(g.state.ammo,29);
+});
+test('a headshot eliminates a bot and updates score and feed',()=>{
+  const g=harness(),b=addBot(g);g.camera.position.set(0,1.72,8);g.camera.lookAt(0,1.72,0);g.camera.updateMatrixWorld(true);g.shoot();
+  assert.ok(b.health<=0);assert.equal(g.state.kills,1);assert.equal(g.state.headshots,1);assert.equal(b.root.visible,false);assert.equal(g.state.feed[0].headshot,true);
+});
+test('switching weapons cancels reload without transferring ammunition',()=>{
+  const g=harness();g.ammo[0].ammo=3;g.reload();assert.ok(g.reloadLeft>0);g.switchWeapon(1);
+  assert.equal(g.reloadLeft,0);assert.equal(g.ammo[0].ammo,3);assert.equal(g.state.ammo,12);
+});
+test('AI cannot damage a player behind an obstacle',()=>{
+  const g=harness();addBot(g,-9,-18);g.state.x=-9;g.state.z=3;g.camera.position.y=1.68;
+  const random=Math.random;Math.random=()=>0;
+  try{g.updateBots(.016);assert.equal(g.state.health,100);assert.equal(g.effects.length,0);}finally{Math.random=random;}
+});
+test('spawn protection prevents AI damage even with unobstructed aim',()=>{
+  const g=harness();addBot(g,-19,-10);g.state.x=-19;g.state.z=-18;g.state.protection=2;
+  const random=Math.random;Math.random=()=>0;
+  try{g.updateBots(.016);assert.equal(g.state.health,100);}finally{Math.random=random;}
+});
+test('AI can shoot, eliminate, and schedule player respawn',()=>{
+  const g=harness();addBot(g,-19,-10);g.state.x=-19;g.state.z=-18;g.state.health=1;g.state.protection=0;
+  const random=Math.random;Math.random=()=>0;
+  try{g.updateBots(.016);assert.equal(g.state.health,0);assert.equal(g.state.deaths,1);assert.equal(g.state.phase,'respawn');assert.equal(g.state.respawn,3);}finally{Math.random=random;}
+});
