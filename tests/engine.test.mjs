@@ -27,6 +27,26 @@ function addBot(g,x=0,z=0){
   const b={...makeSoldier(0),id:0,health:100,dead:0,cooldown:0,noticed:4,path:[],repath:1,walk:0,spawnShield:0,lastSeen:null};
   b.root.position.set(x,0,z);b.targets.forEach(t=>t.userData.bot=0);g.bots.push(b);g.scene.add(b.root);return b;
 }
+function inputEnvironment(g){
+  const previousDocument=globalThis.document,previousWindow=globalThis.window;
+  const doc=new EventTarget(),win=new EventTarget(),canvas=new EventTarget();
+  doc.pointerLockElement=null;doc.exitPointerLock=()=>{doc.pointerLockElement=null;};
+  canvas.focus=()=>{};canvas.requestPointerLock=()=>Promise.reject(new Error('blocked'));
+  globalThis.document=doc;globalThis.window=win;g.renderer={domElement:canvas};g.abort=new AbortController();g.bind();
+  return {doc,canvas,move(x,y,target=canvas){const e=new Event('mousemove');Object.defineProperties(e,{target:{value:target},movementX:{value:x},movementY:{value:y}});doc.dispatchEvent(e);},cleanup(){g.abort.abort();globalThis.document=previousDocument;globalThis.window=previousWindow;}};
+}
+test('unlocked compatibility mode follows mouse movement without holding the right button',()=>{
+  const g=harness();g.state.fallback=true;g.dragging=false;const env=inputEnvironment(g);
+  try{env.move(50,20);assert.ok(g.yaw<0);assert.ok(g.pitch<0);}finally{env.cleanup();}
+});
+test('moving over menus does not turn the unlocked camera',()=>{
+  const g=harness();g.state.fallback=true;const env=inputEnvironment(g);
+  try{env.move(50,20,env.doc);assert.equal(g.yaw,0);g.state.phase='paused';env.move(50,20);assert.equal(g.yaw,0);}finally{env.cleanup();}
+});
+test('pointer lock can be retried and rejection preserves mouse compatibility mode',async()=>{
+  const g=harness();const env=inputEnvironment(g);
+  try{await g.requestMouseLock();assert.equal(g.state.fallback,true);env.move(50,0);assert.ok(g.yaw<0);}finally{env.cleanup();}
+});
 test('starting a fresh round restores the rifle model after using the pistol',()=>{
   const g=harness();g.state.weapon=1;g.guns[0].visible=false;g.guns[1].visible=true;
   g.start(g.options);

@@ -57,11 +57,18 @@ export class ArenaGame{
   resume(){
     this.audio.init();this.keys.clear();this.shooting=false;this.aiming=false;
     this.state.phase=this.state.health<=0?'respawn':'playing';this.state.fallback=false;
-    try{
-      const request=this.renderer.domElement.requestPointerLock();
-      if(request&&typeof request.catch==='function')request.catch(()=>{if(this.disposed)return;this.state.fallback=true;this.emit();});
-    }catch{this.state.fallback=true;}
+    void this.requestMouseLock();
     this.emit();
+  }
+  async requestMouseLock(){
+    if(this.disposed||this.state.phase!=='playing')return;
+    try{
+      this.renderer.domElement.focus();
+      await this.renderer.domElement.requestPointerLock();
+    }catch{
+      if(this.disposed)return;
+      this.state.fallback=true;this.emit();
+    }
   }
   pause(){if(!['playing','respawn'].includes(this.state.phase))return;this.state.phase='paused';this.keys.clear();this.shooting=false;this.aiming=false;this.dragging=false;if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.emit();}
   menu(){this.pause();this.state.phase='menu';this.state.hit=0;this.state.hurt=0;this.emit();}
@@ -80,10 +87,11 @@ export class ArenaGame{
     document.addEventListener('keyup',(e)=>this.keys.delete(e.code),{signal});
     document.addEventListener('mousemove',(e)=>{
       if(this.state.phase!=='playing')return;
-      if(document.pointerLockElement!==this.renderer.domElement&&!(this.state.fallback&&this.dragging))return;
+      const locked=document.pointerLockElement===this.renderer.domElement;
+      if(!locked&&!(this.state.fallback&&(e.target===this.renderer.domElement||this.dragging)))return;
       const s=.002*this.options.sensitivity*(this.aiming?.65:1);this.yaw-=e.movementX*s;this.pitch=Math.max(-1.4,Math.min(1.4,this.pitch-e.movementY*s));
     },{signal});
-    this.renderer.domElement.addEventListener('mousedown',(e)=>{if(this.state.phase!=='playing')return;e.preventDefault();if(e.button===0)this.shooting=true;if(e.button===2){this.aiming=true;this.dragging=true;}},{signal});
+    this.renderer.domElement.addEventListener('mousedown',(e)=>{if(this.state.phase!=='playing')return;e.preventDefault();if(this.state.fallback&&document.pointerLockElement!==this.renderer.domElement)void this.requestMouseLock();if(e.button===0)this.shooting=true;if(e.button===2){this.aiming=true;this.dragging=true;}},{signal});
     document.addEventListener('mouseup',(e)=>{if(e.button===0)this.shooting=false;if(e.button===2){this.aiming=false;this.dragging=false;}},{signal});
     this.renderer.domElement.addEventListener('contextmenu',(e)=>e.preventDefault(),{signal});
     document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement===this.renderer.domElement){this.state.fallback=false;this.emit();}else if(!this.state.fallback)this.pause();},{signal});
