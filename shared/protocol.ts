@@ -103,3 +103,10 @@ export function encodeServerMessage(message: ServerMessage): string {
   return JSON.stringify(message);
 }
 
+const SERVER_TYPES = new Set(['welcome','room_state','snapshot','combat_event','match_started','match_finished','host_changed','error']);
+export function parseServerMessage(raw:string):ServerMessage{
+  if(Buffer.byteLength(raw,'utf8')>MAX_MESSAGE_BYTES)throw new ProtocolError('MESSAGE_TOO_LARGE');
+  let value:unknown;try{value=JSON.parse(raw);}catch(error){throw new ProtocolError('BAD_MESSAGE',error);}
+  if(!value||typeof value!=='object'||!SERVER_TYPES.has(String((value as {type?:unknown}).type)))throw new ProtocolError('BAD_MESSAGE');
+  return value as ServerMessage;
+}

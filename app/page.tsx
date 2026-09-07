@@ -1,2 +1,2 @@
-import Game from './game';
-export default function Home(){return <Game/>;}
+import RootGame from './root-game';
+export default function Home(){return <RootGame/>;}

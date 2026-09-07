@@ -1,0 +1,17 @@
+appId: cn.zeropoint.arena
+productName: 零点行动
+artifactName: zero-point-${version}-win-${arch}.${ext}
+directories:
+  output: release
+files:
+  - dist-client/**/*
+  - electron/**/*
+  - package.json
+  - README.md
+asar: true
+win:
+  target:
+    - target: zip
+      arch:
+        - x64
+
