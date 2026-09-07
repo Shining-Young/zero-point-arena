@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: zero-point-game-server
+    runtime: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile.server
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+

@@ -1,0 +1,11 @@
+node_modules
+.git
+.worktrees
+.openai
+release
+dist
+dist-client
+*.zip
+*.map
+.env*
+
