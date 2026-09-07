@@ -30,6 +30,21 @@ export function moveActor(p:Point,dx:number,dz:number,obstacles:Obstacle[]=OBSTA
   }
   return {x,z};
 }
+export type MovementInput={moveX:number;moveZ:number;yaw:number;sprint:boolean;crouch:boolean;jump:boolean};
+export type MovementState={y:number;velocityY:number;grounded:boolean;crouched?:boolean};
+export function advanceActor(position:Point,input:MovementInput,state:MovementState,dt:number){
+  const length=Math.hypot(input.moveX,input.moveZ), scale=length>1?1/length:1;
+  const side=input.moveX*scale, forward=input.moveZ*scale;
+  const speed=input.crouch?2.2:input.sprint?6.2:4.2;
+  const sin=Math.sin(input.yaw),cos=Math.cos(input.yaw);
+  const dx=(side*cos+forward*sin)*speed*dt;
+  const dz=(-side*sin+forward*cos)*speed*dt;
+  const next=moveActor(position,dx,dz);
+  let velocityY=state.velocityY,y=state.y,grounded=state.grounded;
+  if(input.jump&&grounded&&!input.crouch){velocityY=5.2;grounded=false;}
+  if(!grounded){velocityY-=12*dt;y+=velocityY*dt;if(y<=0){y=0;velocityY=0;grounded=true;}}
+  return {position:next,movement:{y,velocityY,grounded,crouched:input.crouch}};
+}
 export function lineClear(a:Point3,b:Point3,obstacles:Obstacle[]=OBSTACLES){
   return !obstacles.some(o=>{
     let lo=0,hi=1;
