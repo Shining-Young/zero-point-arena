@@ -6,6 +6,7 @@ import {
   ProtocolError,
   encodeServerMessage,
   parseClientMessage,
+  parseServerMessage,
 } from '../shared/protocol.ts';
 
 const parse = value => parseClientMessage(JSON.stringify(value));
@@ -43,4 +44,14 @@ test('rejects messages larger than the UTF-8 byte limit', () => {
 test('encodes server messages as JSON', () => {
   const encoded = encodeServerMessage({ type: 'error', code: 'ROOM_NOT_FOUND', message: '房间不存在' });
   assert.deepEqual(JSON.parse(encoded), { type: 'error', code: 'ROOM_NOT_FOUND', message: '房间不存在' });
+});
+
+test('parses server messages in a browser environment without Node Buffer', () => {
+  const original = globalThis.Buffer;
+  try {
+    globalThis.Buffer = undefined;
+    assert.equal(parseServerMessage('{"type":"error","code":"X","message":"x"}').type, 'error');
+  } finally {
+    globalThis.Buffer = original;
+  }
 });

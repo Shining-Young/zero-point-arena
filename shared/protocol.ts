@@ -4,6 +4,7 @@ import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION } from './config.ts';
 export { MAX_MESSAGE_BYTES, PROTOCOL_VERSION };
 
 export type ProtocolErrorCode = 'BAD_MESSAGE' | 'MESSAGE_TOO_LARGE' | 'VERSION_MISMATCH';
+const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
 
 export class ProtocolError extends Error {
   constructor(public readonly code: ProtocolErrorCode, cause?: unknown) {
@@ -88,7 +89,7 @@ export type ServerMessage =
   | { type: 'error'; code: string; message: string };
 
 export function parseClientMessage(raw: string): ClientMessage {
-  if (Buffer.byteLength(raw, 'utf8') > MAX_MESSAGE_BYTES) throw new ProtocolError('MESSAGE_TOO_LARGE');
+  if (utf8Bytes(raw) > MAX_MESSAGE_BYTES) throw new ProtocolError('MESSAGE_TOO_LARGE');
   let value: unknown;
   try { value = JSON.parse(raw); } catch (error) { throw new ProtocolError('BAD_MESSAGE', error); }
   if (typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'hello' && (value as { protocolVersion?: unknown }).protocolVersion !== PROTOCOL_VERSION) {
@@ -105,7 +106,7 @@ export function encodeServerMessage(message: ServerMessage): string {
 
 const SERVER_TYPES = new Set(['welcome','room_state','snapshot','combat_event','match_started','match_finished','host_changed','error']);
 export function parseServerMessage(raw:string):ServerMessage{
-  if(Buffer.byteLength(raw,'utf8')>MAX_MESSAGE_BYTES)throw new ProtocolError('MESSAGE_TOO_LARGE');
+  if(utf8Bytes(raw)>MAX_MESSAGE_BYTES)throw new ProtocolError('MESSAGE_TOO_LARGE');
   let value:unknown;try{value=JSON.parse(raw);}catch(error){throw new ProtocolError('BAD_MESSAGE',error);}
   if(!value||typeof value!=='object'||!SERVER_TYPES.has(String((value as {type?:unknown}).type)))throw new ProtocolError('BAD_MESSAGE');
   return value as ServerMessage;
