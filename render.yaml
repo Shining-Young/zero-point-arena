@@ -6,5 +6,5 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile.server
     healthCheckPath: /health
-    autoDeployTrigger: "off"
+    autoDeployTrigger: commit
 

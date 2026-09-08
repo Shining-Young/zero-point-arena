@@ -1,4 +1,4 @@
-import { parseServerMessage, PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from '../../shared/protocol.ts';
+import { parseServerMessage, PROTOCOL_VERSION, RELEASE_VERSION, type ClientMessage, type ServerMessage } from '../../shared/protocol.ts';
 import type { ConnectionPhase } from './store.ts';
 
 type StorageLike={getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void};
@@ -15,7 +15,7 @@ export class GameConnection{
     this.reconnectToken=this.storage?.getItem('zero-point-reconnect')??undefined;
   }
   connect(){this.manual=false;this.phase=this.attempt?'reconnecting':'connecting';const socket=this.socketFactory(this.options.url);this.socket=socket;
-    socket.addEventListener('open',()=>{this.attempt=0;this.sendNow({type:'hello',protocolVersion:PROTOCOL_VERSION,releaseVersion:'0.2.1',...(this.reconnectToken?{reconnectToken:this.reconnectToken}:{})});for(const message of this.queued)this.sendNow(message);this.queued=[];});
+    socket.addEventListener('open',()=>{this.attempt=0;this.sendNow({type:'hello',protocolVersion:PROTOCOL_VERSION,releaseVersion:RELEASE_VERSION,...(this.reconnectToken?{reconnectToken:this.reconnectToken}:{})});for(const message of this.queued)this.sendNow(message);this.queued=[];});
     socket.addEventListener('message',event=>{try{const message=parseServerMessage(String(event.data));if(message.type==='welcome'){this.playerId=message.playerId;this.reconnectToken=message.reconnectToken;this.storage?.setItem('zero-point-reconnect',message.reconnectToken);}if(message.type==='room_state')this.phase=message.phase==='playing'?'playing':'lobby';if(message.type==='match_started')this.phase='playing';if(message.type==='match_finished')this.phase='ended';if(message.type==='error'&&message.code==='VERSION_MISMATCH'){this.phase='ended';this.manual=true;}for(const listener of this.listeners)listener(message);}catch{}});
     socket.addEventListener('close',()=>{if(this.manual)return;this.phase='reconnecting';const delays=[1000,2000,4000,8000],delay=delays[Math.min(this.attempt++,delays.length-1)];this.timer=this.schedule(()=>this.connect(),delay);});
   }

@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION } from './config.ts';
+import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, RELEASE_VERSION } from './config.ts';
 
-export { MAX_MESSAGE_BYTES, PROTOCOL_VERSION };
+export { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, RELEASE_VERSION };
 
 export type ProtocolErrorCode = 'BAD_MESSAGE' | 'MESSAGE_TOO_LARGE' | 'VERSION_MISMATCH';
 const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;

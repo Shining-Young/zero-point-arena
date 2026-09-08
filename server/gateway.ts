@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
-import { encodeServerMessage, MAX_MESSAGE_BYTES, parseClientMessage, ProtocolError, PROTOCOL_VERSION, type ServerMessage } from '../shared/protocol.ts';
+import { encodeServerMessage, MAX_MESSAGE_BYTES, parseClientMessage, ProtocolError, PROTOCOL_VERSION, RELEASE_VERSION, type ServerMessage } from '../shared/protocol.ts';
 import { RoomError, RoomManager } from './room-manager.ts';
 import { MatchSimulation } from './simulation.ts';
 import { TokenBucket } from './rate-limit.ts';
@@ -12,7 +12,7 @@ type Options={port?:number;host?:string};
 export async function createGameServer(options:Options={}){
   const rooms=new RoomManager(),sessions=new Map<string,Session>(),simulations=new Map<string,MatchSimulation>();
   const http=createServer((request,response)=>{
-    if(request.method==='GET'&&request.url==='/health'){response.writeHead(200,{'content-type':'application/json'});response.end(JSON.stringify({ok:true,protocolVersion:PROTOCOL_VERSION}));return;}
+    if(request.method==='GET'&&request.url==='/health'){response.writeHead(200,{'content-type':'application/json'});response.end(JSON.stringify({ok:true,protocolVersion:PROTOCOL_VERSION,releaseVersion:RELEASE_VERSION}));return;}
     response.writeHead(404);response.end('Not found');
   });
   const wss=new WebSocketServer({noServer:true,maxPayload:MAX_MESSAGE_BYTES});
