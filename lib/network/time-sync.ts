@@ -8,3 +8,19 @@ export function sampleSnapshots<T extends {serverTime:number}>(buffer:T[],render
   return {before,after,alpha};
 }
 
+export class ServerTimeline {
+  private clockOffset?: number;
+  private lastRenderTime = -Infinity;
+
+  observe(serverTime: number, receivedAt: number) {
+    const sample = receivedAt - serverTime;
+    if (this.clockOffset === undefined || sample < this.clockOffset) this.clockOffset = sample;
+  }
+
+  renderTime(now: number, interpolationDelay: number) {
+    if (this.clockOffset === undefined) return 0;
+    this.lastRenderTime = Math.max(this.lastRenderTime, now - this.clockOffset - interpolationDelay);
+    return this.lastRenderTime;
+  }
+}
+

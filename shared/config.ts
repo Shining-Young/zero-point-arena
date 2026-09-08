@@ -1,5 +1,5 @@
 export const PROTOCOL_VERSION = 1 as const;
-export const RELEASE_VERSION = '0.2.1' as const;
+export const RELEASE_VERSION = '0.2.2' as const;
 export const MAX_MESSAGE_BYTES = 8192;
 export const SERVER_TICK_RATE = 20;
 export const SNAPSHOT_RATE = 10;

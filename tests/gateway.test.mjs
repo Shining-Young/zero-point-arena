@@ -23,7 +23,7 @@ async function opened(url) {
 test('reports application readiness and rejects other websocket paths', async t => {
   const server = await createGameServer({ port: 0 }); t.after(server.close);
   const response = await fetch(`${server.httpUrl}/health`);
-  assert.deepEqual(await response.json(), { ok: true, protocolVersion: 1, releaseVersion: '0.2.1' });
+  assert.deepEqual(await response.json(), { ok: true, protocolVersion: 1, releaseVersion: '0.2.2' });
   const bad = new WebSocket(`${server.wsBase}/wrong`);
   const status = await new Promise(resolve => bad.on('unexpected-response', (_req, res) => resolve(res.statusCode)));
   assert.equal(status, 404);

@@ -3,7 +3,9 @@ import test from 'node:test';
 import { EventEmitter } from 'node:events';
 
 import { GameConnection } from '../lib/network/client.ts';
-import { sampleSnapshots } from '../lib/network/time-sync.ts';
+import * as timeSync from '../lib/network/time-sync.ts';
+
+const { sampleSnapshots } = timeSync;
 
 class FakeSocket extends EventEmitter {
   static OPEN=1;readyState=0;sent=[];
@@ -26,6 +28,18 @@ test('sends hello, stores welcome identity and notifies subscribers', () => {
 test('samples snapshots around render time', () => {
   const result=sampleSnapshots([{serverTime:100},{serverTime:200}],150);
   assert.equal(result?.alpha,.5);assert.equal(result?.before.serverTime,100);assert.equal(result?.after.serverTime,200);
+});
+
+test('keeps the remote render timeline moving forward through arrival jitter', () => {
+  assert.equal(typeof timeSync.ServerTimeline, 'function');
+  const timeline = new timeSync.ServerTimeline();
+  timeline.observe(1000, 1100);
+  const beforeDelayedPacket = timeline.renderTime(1279, 120);
+  timeline.observe(1100, 1280);
+  const afterDelayedPacket = timeline.renderTime(1280, 120);
+  assert.ok(afterDelayedPacket >= beforeDelayedPacket);
+  timeline.observe(1200, 1300);
+  assert.ok(timeline.renderTime(1320, 120) > afterDelayedPacket);
 });
 
 test('drops real-time gameplay input while disconnected instead of replaying a burst', () => {

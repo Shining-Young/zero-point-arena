@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import type { GameConnection } from '../network/client.ts';
-import type { ServerMessage, SnapshotEntity } from '../../shared/protocol.ts';
-import { advanceActor, type MovementState } from './rules.ts';
+import type { ServerMessage } from '../../shared/protocol.ts';
+import { type MovementInput, type MovementState } from './rules.ts';
+import { sampleSnapshots, ServerTimeline } from '../network/time-sync.ts';
+import { advanceLocalPrediction, applyVerticalAuthority, interpolatePose, reconcilePrediction, type PendingPrediction } from '../network/motion.ts';
 import { GameAudio } from './audio.ts';
 import { buildWorld, makeRifle, makeSoldier } from './world.ts';
 
@@ -25,9 +27,13 @@ export class MultiplayerGame{
   private guns:THREE.Object3D[]=[];
   private hud={...INITIAL_HUD};
   private yaw=0;private pitch=0;private position={x:-19,z:19};
+  private visualPosition={x:-19,z:19};
   private movement:MovementState={y:0,velocityY:0,grounded:true,crouched:false};
   private sequence=0;private weapon:'rifle'|'pistol'='rifle';private remaining=300;
   private disposed=false;private shooting=false;private aiming=false;private lastFire=-Infinity;
+  private initialized=false;private lastFrame=performance.now();private timeline=new ServerTimeline();
+  private pendingInputs:PendingPrediction[]=[];
+  private snapshotBuffer:Extract<ServerMessage,{type:'snapshot'}>[]=[];
   private inputTimer:ReturnType<typeof setInterval>;private unsubscribe:()=>void;
 
   private readonly onKeyDown=(event:KeyboardEvent)=>{
@@ -67,7 +73,7 @@ export class MultiplayerGame{
     this.resize();addEventListener('resize',this.resize);addEventListener('keydown',this.onKeyDown);addEventListener('keyup',this.onKeyUp);addEventListener('mousemove',this.onMouseMove);addEventListener('mouseup',this.onMouseUp);addEventListener('blur',this.onBlur);
     this.renderer.domElement.addEventListener('mousedown',this.onMouseDown);this.renderer.domElement.addEventListener('contextmenu',this.onContextMenu);
     this.unsubscribe=connection.subscribe(message=>{
-      if(message.type==='snapshot'){this.remaining=message.remainingSeconds;this.applySnapshot(message.entities);}
+      if(message.type==='snapshot'){this.remaining=message.remainingSeconds;this.applySnapshot(message);}
       if(message.type==='combat_event')this.applyCombatEvent(message);
       if(message.type==='match_finished'){this.shooting=false;this.emit({result:message.winnerId===this.playerId?'win':message.winnerId?'loss':'draw'});}
     });
@@ -82,24 +88,31 @@ export class MultiplayerGame{
     this.lastFire=now;
     this.connection.send({type:'fire',weapon:this.weapon,sequence:++this.sequence,yaw:this.yaw,pitch:this.pitch,clientTime:Date.now()});
   }
+  private movementInput():MovementInput&{pitch:number}{return {moveX:(this.keys.has('KeyD')?1:0)-(this.keys.has('KeyA')?1:0),moveZ:(this.keys.has('KeyW')?1:0)-(this.keys.has('KeyS')?1:0),yaw:this.yaw,pitch:this.pitch,jump:this.keys.has('Space'),crouch:this.keys.has('KeyC')||this.keys.has('ControlLeft'),sprint:this.keys.has('ShiftLeft')};}
   private sendInput(){
     const canSend=this.connection.phase==='playing',connected=canSend||this.connection.phase==='ended';if(this.hud.connected!==connected)this.emit({connected});if(!canSend)return;
-    const moveX=(this.keys.has('KeyD')?1:0)-(this.keys.has('KeyA')?1:0),moveZ=(this.keys.has('KeyW')?1:0)-(this.keys.has('KeyS')?1:0);
-    const input={type:'input' as const,sequence:++this.sequence,moveX,moveZ,yaw:this.yaw,pitch:this.pitch,jump:this.keys.has('Space'),crouch:this.keys.has('KeyC')||this.keys.has('ControlLeft'),sprint:this.keys.has('ShiftLeft'),clientTime:Date.now()};
-    this.connection.send(input);const next=advanceActor(this.position,input,this.movement,.05);this.position=next.position;this.movement=next.movement;
+    const input={type:'input' as const,sequence:++this.sequence,...this.movementInput(),clientTime:Date.now()};
+    this.connection.send(input);this.pendingInputs.push({sequence:input.sequence,position:{...this.position}});if(this.pendingInputs.length>128)this.pendingInputs.shift();
   }
-  private applySnapshot(entities:SnapshotEntity[]){
+  private applySnapshot(message:Extract<ServerMessage,{type:'snapshot'}>){
+    const entities=message.entities;this.snapshotBuffer.push(message);if(this.snapshotBuffer.length>20)this.snapshotBuffer.shift();this.timeline.observe(message.serverTime,Date.now());
     const local=entities.find(entity=>entity.id===this.playerId);
     if(local){
-      const error=Math.hypot(local.x-this.position.x,local.z-this.position.z);
-      if(error>.35)this.position={x:local.x,z:local.z};else{this.position.x+=(local.x-this.position.x)*.2;this.position.z+=(local.z-this.position.z)*.2;}
+      if(!this.initialized){this.position={x:local.x,z:local.z};this.visualPosition={...this.position};this.movement={...this.movement,y:local.y};this.pendingInputs=[];this.initialized=true;}
+      else{const reconciled=reconcilePrediction(this.position,this.visualPosition,this.pendingInputs,{x:local.x,z:local.z},message.lastProcessedInput);this.position=reconciled.position;this.visualPosition=reconciled.visualPosition;this.pendingInputs=reconciled.pending;this.movement=applyVerticalAuthority(this.movement,local.y,reconciled.snapped||(!this.hud.alive&&local.alive));}
       if(local.weapon!==this.weapon)this.setWeapon(local.weapon);
       if(!local.alive)this.shooting=false;
       this.emit({health:local.health,ammo:local.ammo,reserve:local.reserve,kills:local.kills,deaths:local.deaths,remaining:this.remaining,latency:this.connection.latency,connected:this.connection.phase==='playing',weapon:local.weapon,reloadLeft:local.reloadLeft,alive:local.alive,protection:local.spawnProtection,aiming:this.aiming});
     }
     const active=new Set<string>();
-    for(const entity of entities){if(entity.id===this.playerId)continue;active.add(entity.id);let actor=this.actors.get(entity.id);if(!actor){actor=makeSoldier(this.actors.size);this.actors.set(entity.id,actor);this.scene.add(actor.root);}actor.root.visible=entity.alive;actor.root.position.set(entity.x,entity.y,entity.z);actor.root.rotation.y=entity.yaw;}
+    for(const entity of entities){if(entity.id===this.playerId)continue;active.add(entity.id);let actor=this.actors.get(entity.id);if(!actor){actor=makeSoldier(this.actors.size);this.actors.set(entity.id,actor);this.scene.add(actor.root);}actor.root.visible=entity.alive;}
     for(const [id,actor] of this.actors)if(!active.has(id)){this.scene.remove(actor.root);this.actors.delete(id);}
+  }
+  private renderRemoteActors(){
+    const latest=this.snapshotBuffer[this.snapshotBuffer.length-1];if(!latest)return;
+    const sampled=sampleSnapshots(this.snapshotBuffer,this.timeline.renderTime(Date.now(),120));if(!sampled)return;
+    const before=new Map(sampled.before.entities.map(entity=>[entity.id,entity])),after=new Map(sampled.after.entities.map(entity=>[entity.id,entity]));
+    for(const [id,actor] of this.actors){const a=before.get(id)??after.get(id),b=after.get(id)??before.get(id);if(!a||!b)continue;const pose=interpolatePose(a,b,sampled.alpha,a.alive!==b.alive);actor.root.position.set(pose.x,pose.y,pose.z);actor.root.rotation.y=pose.yaw;actor.root.visible=sampled.alpha<.5?a.alive:b.alive;}
   }
   private applyCombatEvent(message:Extract<ServerMessage,{type:'combat_event'}>){
     if(message.actorId===this.playerId&&message.event==='shot')this.audio.shot();
@@ -109,10 +122,12 @@ export class MultiplayerGame{
     if(message.targetId===this.playerId&&(message.event==='hit'||message.event==='headshot'))this.emit({hurt:Date.now()});
   }
   private frame(){
-    if(this.disposed)return;this.tryFire(performance.now());
+    if(this.disposed)return;const now=performance.now(),dt=Math.min(.05,Math.max(0,(now-this.lastFrame)/1000));this.lastFrame=now;this.tryFire(now);
+    if(this.initialized&&this.connection.phase==='playing'&&this.hud.alive&&!this.hud.result){const next=advanceLocalPrediction({position:this.position,visualPosition:this.visualPosition,movement:this.movement},this.movementInput(),dt);this.position=next.position;this.visualPosition=next.visualPosition;this.movement=next.movement;}
+    const correction=1-Math.exp(-16*dt);this.visualPosition.x+=(this.position.x-this.visualPosition.x)*correction;this.visualPosition.z+=(this.position.z-this.visualPosition.z)*correction;this.renderRemoteActors();
     const targetFov=this.aiming?55:74;if(Math.abs(this.camera.fov-targetFov)>.05){this.camera.fov+=(targetFov-this.camera.fov)*.2;this.camera.updateProjectionMatrix();}
     this.gunRig.position.z=this.aiming?-.12:0;
-    this.camera.position.set(this.position.x,this.movement.y+(this.movement.crouched?1.15:1.65),this.position.z);this.camera.rotation.order='YXZ';this.camera.rotation.set(this.pitch,this.yaw,0);this.renderer.render(this.scene,this.camera);
+    this.camera.position.set(this.visualPosition.x,this.movement.y+(this.movement.crouched?1.15:1.65),this.visualPosition.z);this.camera.rotation.order='YXZ';this.camera.rotation.set(this.pitch,this.yaw,0);this.renderer.render(this.scene,this.camera);
   }
   dispose(){
     this.disposed=true;clearInterval(this.inputTimer);this.unsubscribe();this.renderer.setAnimationLoop(null);
