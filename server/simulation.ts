@@ -19,7 +19,9 @@ export type SimPlayer = Participant & MovementState & {
 };
 
 type SimulationOptions={scoreLimit?:number;matchSeconds?:number;difficulty?:Difficulty;now?:()=>number};
-type SimulationEvent={type:'shot'|'hit'|'headshot'|'kill'|'reload'|'respawn';actorId:string;targetId?:string;value?:number};
+type SimulationEvent=
+  | {type:'shot';actorId:string;yaw:number;pitch:number}
+  | {type:'hit'|'headshot'|'kill'|'reload'|'respawn';actorId:string;targetId?:string;value?:number};
 
 export class MatchSimulation {
   readonly players = new Map<string, SimPlayer>();
@@ -53,7 +55,7 @@ export class MatchSimulation {
   fire(id:string,message:{sequence:number;weapon:Weapon;yaw:number;pitch:number;clientTime:number}){
     const shooter=this.player(id),weapon=WEAPONS[shooter.weapon];
     if(this.finished||!shooter.alive||shooter.cooldown>1/SERVER_TICK_RATE||shooter.reloadLeft>0||shooter.ammo<=0||message.weapon!==shooter.weapon)return false;
-    shooter.ammo-=1;shooter.inventory[shooter.weapon].ammo=shooter.ammo;shooter.cooldown=weapon.cadence;this.events.push({type:'shot',actorId:id});
+    shooter.ammo-=1;shooter.inventory[shooter.weapon].ammo=shooter.ammo;shooter.cooldown=weapon.cadence;this.events.push({type:'shot',actorId:id,yaw:message.yaw,pitch:message.pitch});
     const forward=forwardFromYaw(message.yaw),cosPitch=Math.cos(message.pitch),originY=shooter.y+(shooter.crouched?1.15:1.65);
     let best:SimPlayer|undefined,bestAlong=Infinity,bestHeadshot=false;
     for(const target of this.players.values()){

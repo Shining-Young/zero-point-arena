@@ -79,11 +79,14 @@ export type SnapshotEntity = {
   reserve: number; kills: number; deaths: number; alive: boolean;
   reloadLeft: number; spawnProtection: number;
 };
+export type CombatEventMessage =
+  | { type:'combat_event';event:'shot';actorId:string;yaw:number;pitch:number }
+  | { type:'combat_event';event:'hit'|'headshot'|'kill'|'reload'|'respawn';actorId:string;targetId?:string;value?:number };
 export type ServerMessage =
   | { type: 'welcome'; playerId: string; reconnectToken: string; serverTime: number }
   | { type: 'room_state'; roomCode: string; hostPlayerId: string; phase: 'lobby' | 'playing' | 'finished'; humanLimit: number; botCount: number; difficulty: Difficulty; players: RoomPlayer[] }
   | { type: 'snapshot'; tick: number; serverTime: number; remainingSeconds: number; lastProcessedInput?: number; entities: SnapshotEntity[] }
-  | { type: 'combat_event'; event: 'shot' | 'hit' | 'headshot' | 'kill' | 'reload' | 'respawn'; actorId: string; targetId?: string; value?: number }
+  | CombatEventMessage
   | { type: 'match_started'; serverTime: number }
   | { type: 'match_finished'; winnerId?: string; reason: 'score' | 'time' }
   | { type: 'host_changed'; hostPlayerId: string }

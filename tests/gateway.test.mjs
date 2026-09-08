@@ -23,7 +23,7 @@ async function opened(url) {
 test('reports application readiness and rejects other websocket paths', async t => {
   const server = await createGameServer({ port: 0 }); t.after(server.close);
   const response = await fetch(`${server.httpUrl}/health`);
-  assert.deepEqual(await response.json(), { ok: true, protocolVersion: 1, releaseVersion: '0.2.2' });
+  assert.deepEqual(await response.json(), { ok: true, protocolVersion: 2, releaseVersion: '0.2.3' });
   const bad = new WebSocket(`${server.wsBase}/wrong`);
   const status = await new Promise(resolve => bad.on('unexpected-response', (_req, res) => resolve(res.statusCode)));
   assert.equal(status, 404);
@@ -35,10 +35,10 @@ test('requires hello then creates, joins and broadcasts a room', async t => {
   t.after(() => { a.ws.close(); b.ws.close(); });
   a.send({ type: 'create_room', nickname: 'A', humanLimit: 2, botCount: 0, difficulty: 'easy' });
   assert.equal((await a.waitFor('error')).code, 'HELLO_REQUIRED');
-  a.send({ type: 'hello', protocolVersion: 1, releaseVersion: '0.2.0' });
+  a.send({ type: 'hello', protocolVersion: 2, releaseVersion: '0.2.3' });
   a.send({ type: 'create_room', nickname: 'A', humanLimit: 2, botCount: 0, difficulty: 'easy' });
   const room = await a.waitFor('room_state');
-  b.send({ type: 'hello', protocolVersion: 1, releaseVersion: '0.2.0' });
+  b.send({ type: 'hello', protocolVersion: 2, releaseVersion: '0.2.3' });
   b.send({ type: 'join_room', nickname: 'B', roomCode: room.roomCode });
   await b.waitFor('welcome');
   const joined = await b.waitFor('room_state');
@@ -49,7 +49,7 @@ test('starts a match and publishes authoritative snapshots', async t => {
   const server = await createGameServer({ port: 0 }); t.after(server.close);
   const a = await opened(`${server.wsBase}/game`), b = await opened(`${server.wsBase}/game`);
   t.after(() => { a.ws.close(); b.ws.close(); });
-  for (const c of [a,b]) c.send({ type:'hello', protocolVersion:1, releaseVersion:'0.2.0' });
+  for (const c of [a,b]) c.send({ type:'hello', protocolVersion:2, releaseVersion:'0.2.3' });
   a.send({ type:'create_room', nickname:'A', humanLimit:2, botCount:0, difficulty:'normal' });
   const room = await a.waitFor('room_state');
   b.send({ type:'join_room', nickname:'B', roomCode:room.roomCode }); await b.waitFor('room_state');
@@ -57,9 +57,11 @@ test('starts a match and publishes authoritative snapshots', async t => {
   await new Promise(resolve=>setTimeout(resolve,30)); a.send({ type:'start_match' });
   const snapshot = await a.waitFor('snapshot');
   assert.equal(snapshot.entities.length, 2);
-  a.send({ type:'fire', weapon:'rifle', sequence:1, yaw:0, pitch:0, clientTime:Date.now() });
+  a.send({ type:'fire', weapon:'rifle', sequence:1, yaw:.75, pitch:-.2, clientTime:Date.now() });
   const combat = await b.waitFor('combat_event');
   assert.equal(combat.event, 'shot');
+  assert.equal(combat.yaw, .75);
+  assert.equal(combat.pitch, -.2);
 });
 
 test('returns application errors for malformed JSON and closes oversized messages', async t => {

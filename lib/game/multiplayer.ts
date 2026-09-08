@@ -3,8 +3,9 @@ import type { GameConnection } from '../network/client.ts';
 import type { ServerMessage } from '../../shared/protocol.ts';
 import { type MovementInput, type MovementState } from './rules.ts';
 import { sampleSnapshots, ServerTimeline } from '../network/time-sync.ts';
-import { advanceLocalPrediction, applyVerticalAuthority, interpolatePose, reconcilePrediction, type PendingPrediction } from '../network/motion.ts';
+import { advanceLocalPrediction, applyVerticalAuthority, interpolatePose, reconcilePrediction, smoothVisualPosition, type PendingPrediction } from '../network/motion.ts';
 import { GameAudio } from './audio.ts';
+import { directionFromAngles, resolveShotEnd, spawnShotEffect, updateShotEffects, type ShotEffect } from './shot-effects.ts';
 import { buildWorld, makeRifle, makeSoldier } from './world.ts';
 
 export type MultiplayerHud={
@@ -25,6 +26,7 @@ export class MultiplayerGame{
   private audio=new GameAudio();
   private gunRig=new THREE.Group();
   private guns:THREE.Object3D[]=[];
+  private solid:THREE.Object3D[]=[];private shotEffects:ShotEffect[]=[];
   private hud={...INITIAL_HUD};
   private yaw=0;private pitch=0;private position={x:-19,z:19};
   private visualPosition={x:-19,z:19};
@@ -67,7 +69,7 @@ export class MultiplayerGame{
 
   constructor(private readonly container:HTMLElement,private readonly connection:GameConnection,private readonly playerId:string,private readonly callback:(hud:MultiplayerHud)=>void){
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));this.renderer.shadowMap.enabled=true;container.appendChild(this.renderer.domElement);
-    buildWorld(this.scene);this.scene.add(this.camera);this.camera.add(this.gunRig);
+    this.solid=buildWorld(this.scene).solid;this.scene.add(this.camera);this.camera.add(this.gunRig);
     const rifle=makeRifle(),pistol=makeRifle(true);this.guns=[rifle,pistol];
     for(const gun of this.guns){gun.position.set(.28,-.28,-.55);gun.scale.setScalar(.7);this.gunRig.add(gun);}this.setWeapon('rifle');
     this.resize();addEventListener('resize',this.resize);addEventListener('keydown',this.onKeyDown);addEventListener('keyup',this.onKeyUp);addEventListener('mousemove',this.onMouseMove);addEventListener('mouseup',this.onMouseUp);addEventListener('blur',this.onBlur);
@@ -86,8 +88,15 @@ export class MultiplayerGame{
   private tryFire(now:number){
     if(!this.shooting||!this.hud.connected||!this.hud.alive||this.hud.ammo<=0||this.hud.reloadLeft>0||this.hud.result||now-this.lastFire<FIRE_INTERVAL[this.weapon])return;
     this.lastFire=now;
+    this.showLocalShot();
     this.connection.send({type:'fire',weapon:this.weapon,sequence:++this.sequence,yaw:this.yaw,pitch:this.pitch,clientTime:Date.now()});
   }
+  private addShot(origin:THREE.Vector3,direction:THREE.Vector3,enemy:boolean,excludeActorId?:string){
+    this.scene.updateMatrixWorld(true);const targets=[...this.solid,...[...this.actors].filter(([id,actor])=>id!==excludeActorId&&actor.root.visible).flatMap(([,actor])=>actor.targets)];
+    this.shotEffects.push(spawnShotEffect(this.scene,origin,resolveShotEnd(origin,direction,targets),enemy));
+  }
+  private showLocalShot(){this.camera.updateMatrixWorld(true);const origin=this.camera.localToWorld(new THREE.Vector3(this.aiming?.04:.23,-.2,-.8));this.addShot(origin,directionFromAngles(this.yaw,this.pitch),false);}
+  private showRemoteShot(actorId:string,yaw:number,pitch:number){const actor=this.actors.get(actorId);if(!actor||!actor.root.visible)return;this.scene.updateMatrixWorld(true);this.addShot(actor.root.localToWorld(actor.muzzle.clone()),directionFromAngles(yaw,pitch),true,actorId);}
   private movementInput():MovementInput&{pitch:number}{return {moveX:(this.keys.has('KeyD')?1:0)-(this.keys.has('KeyA')?1:0),moveZ:(this.keys.has('KeyW')?1:0)-(this.keys.has('KeyS')?1:0),yaw:this.yaw,pitch:this.pitch,jump:this.keys.has('Space'),crouch:this.keys.has('KeyC')||this.keys.has('ControlLeft'),sprint:this.keys.has('ShiftLeft')};}
   private sendInput(){
     const canSend=this.connection.phase==='playing',connected=canSend||this.connection.phase==='ended';if(this.hud.connected!==connected)this.emit({connected});if(!canSend)return;
@@ -115,16 +124,16 @@ export class MultiplayerGame{
     for(const [id,actor] of this.actors){const a=before.get(id)??after.get(id),b=after.get(id)??before.get(id);if(!a||!b)continue;const pose=interpolatePose(a,b,sampled.alpha,a.alive!==b.alive);actor.root.position.set(pose.x,pose.y,pose.z);actor.root.rotation.y=pose.yaw;actor.root.visible=sampled.alpha<.5?a.alive:b.alive;}
   }
   private applyCombatEvent(message:Extract<ServerMessage,{type:'combat_event'}>){
-    if(message.actorId===this.playerId&&message.event==='shot')this.audio.shot();
+    if(message.event==='shot'){if(message.actorId===this.playerId)this.audio.shot();else{this.audio.shot(true);this.showRemoteShot(message.actorId,message.yaw,message.pitch);}}
     if(message.actorId===this.playerId&&(message.event==='hit'||message.event==='headshot')){this.audio.hit();this.emit({hitMarker:Date.now(),headshot:message.event==='headshot'});}
     if(message.actorId===this.playerId&&message.event==='kill')this.audio.kill();
     if(message.actorId===this.playerId&&message.event==='reload')this.audio.reload();
-    if(message.targetId===this.playerId&&(message.event==='hit'||message.event==='headshot'))this.emit({hurt:Date.now()});
+    if(message.event!=='shot'&&message.targetId===this.playerId&&(message.event==='hit'||message.event==='headshot'))this.emit({hurt:Date.now()});
   }
   private frame(){
     if(this.disposed)return;const now=performance.now(),dt=Math.min(.05,Math.max(0,(now-this.lastFrame)/1000));this.lastFrame=now;this.tryFire(now);
     if(this.initialized&&this.connection.phase==='playing'&&this.hud.alive&&!this.hud.result){const next=advanceLocalPrediction({position:this.position,visualPosition:this.visualPosition,movement:this.movement},this.movementInput(),dt);this.position=next.position;this.visualPosition=next.visualPosition;this.movement=next.movement;}
-    const correction=1-Math.exp(-16*dt);this.visualPosition.x+=(this.position.x-this.visualPosition.x)*correction;this.visualPosition.z+=(this.position.z-this.visualPosition.z)*correction;this.renderRemoteActors();
+    const correction=1-Math.exp(-16*dt);this.visualPosition=smoothVisualPosition(this.visualPosition,this.position,correction);this.renderRemoteActors();this.shotEffects=updateShotEffects(this.scene,this.shotEffects,dt);
     const targetFov=this.aiming?55:74;if(Math.abs(this.camera.fov-targetFov)>.05){this.camera.fov+=(targetFov-this.camera.fov)*.2;this.camera.updateProjectionMatrix();}
     this.gunRig.position.z=this.aiming?-.12:0;
     this.camera.position.set(this.visualPosition.x,this.movement.y+(this.movement.crouched?1.15:1.65),this.visualPosition.z);this.camera.rotation.order='YXZ';this.camera.rotation.set(this.pitch,this.yaw,0);this.renderer.render(this.scene,this.camera);
@@ -133,6 +142,6 @@ export class MultiplayerGame{
     this.disposed=true;clearInterval(this.inputTimer);this.unsubscribe();this.renderer.setAnimationLoop(null);
     removeEventListener('resize',this.resize);removeEventListener('keydown',this.onKeyDown);removeEventListener('keyup',this.onKeyUp);removeEventListener('mousemove',this.onMouseMove);removeEventListener('mouseup',this.onMouseUp);removeEventListener('blur',this.onBlur);
     this.renderer.domElement.removeEventListener('mousedown',this.onMouseDown);this.renderer.domElement.removeEventListener('contextmenu',this.onContextMenu);
-    if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.audio.dispose();this.renderer.dispose();this.renderer.domElement.remove();
+    if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.shotEffects=updateShotEffects(this.scene,this.shotEffects,Infinity);this.audio.dispose();this.renderer.dispose();this.renderer.domElement.remove();
   }
 }

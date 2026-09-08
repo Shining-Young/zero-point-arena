@@ -7,7 +7,7 @@ const make=()=>new Promise((resolve,reject)=>{const ws=new WebSocket(endpoint),m
 const waitUntil=(client,predicate,label)=>new Promise((resolve,reject)=>{const until=Date.now()+20_000;const scan=()=>{const found=client.messages.find(predicate);if(found)resolve(found);else if(Date.now()>until)reject(new Error(`timeout ${label}`));else setTimeout(scan,50)};scan();});
 const a=await make(),b=await make();
 try{
-  for(const client of[a,b])client.send({type:'hello',protocolVersion:1,releaseVersion:'0.2.2'});
+  for(const client of[a,b])client.send({type:'hello',protocolVersion:2,releaseVersion:'0.2.3'});
   a.send({type:'create_room',nickname:'Public-A',humanLimit:4,botCount:1,difficulty:'normal'});const room=await a.wait('room_state');
   b.send({type:'join_room',nickname:'Public-B',roomCode:room.roomCode});await b.wait('welcome');
   a.send({type:'set_ready',ready:true});b.send({type:'set_ready',ready:true});await new Promise(resolve=>setTimeout(resolve,300));a.send({type:'start_match'});

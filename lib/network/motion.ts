@@ -1,4 +1,4 @@
-import { advanceActor, type MovementInput, type MovementState, type Point } from '../game/rules.ts';
+import { advanceActor, moveActor, type MovementInput, type MovementState, type Obstacle, type Point } from '../game/rules.ts';
 
 export type LocalPrediction = {
   position: Point;
@@ -28,25 +28,44 @@ export function reconcilePrediction(
   authoritative: Point,
   acknowledgedSequence: number | undefined,
   hardSnapDistance = 3,
+  obstacles?:Obstacle[],
 ) {
   const acknowledged = acknowledgedSequence === undefined ? undefined : [...pending].reverse().find(item => item.sequence <= acknowledgedSequence);
   const remaining = acknowledgedSequence === undefined ? pending : pending.filter(item => item.sequence > acknowledgedSequence);
   if (!acknowledged) {
     if (Math.hypot(authoritative.x - position.x, authoritative.z - position.z) > hardSnapDistance) {
-      return { position: authoritative, visualPosition: authoritative, pending: remaining, snapped: true };
+      return { position: authoritative, visualPosition: authoritative, pending: [], snapped: true };
     }
     return { position, visualPosition, pending: remaining, snapped: false };
   }
   const correction = { x: authoritative.x - acknowledged.position.x, z: authoritative.z - acknowledged.position.z };
   if (Math.hypot(correction.x, correction.z) > hardSnapDistance) {
-    return { position: authoritative, visualPosition: authoritative, pending: remaining, snapped: true };
+    return { position: authoritative, visualPosition: authoritative, pending: [], snapped: true };
   }
+  let replayed={...authoritative},previous=acknowledged.position;
+  const replayedPending=remaining.map(item=>{
+    replayed=moveActor(replayed,item.position.x-previous.x,item.position.z-previous.z,obstacles);previous=item.position;
+    return {sequence:item.sequence,position:{...replayed}};
+  });
+  const tail=remaining[remaining.length-1]?.position??acknowledged.position;
+  replayed=moveActor(replayed,position.x-tail.x,position.z-tail.z,obstacles);
   return {
-    position: { x: position.x + correction.x, z: position.z + correction.z },
+    position: replayed,
     visualPosition,
-    pending: remaining,
+    pending: replayedPending,
     snapped: false,
   };
+}
+
+export function smoothVisualPosition(visual: Point, target: Point, alpha: number, obstacles?: Obstacle[]): Point {
+  const t = Math.max(0, Math.min(1, alpha));
+  const candidate = {
+    x: visual.x + (target.x - visual.x) * t,
+    z: visual.z + (target.z - visual.z) * t,
+  };
+  const constrained = moveActor(visual, candidate.x - visual.x, candidate.z - visual.z, obstacles);
+  const blocked = Math.hypot(constrained.x - candidate.x, constrained.z - candidate.z) > 1e-4;
+  return blocked ? { ...target } : constrained;
 }
 
 export function interpolatePose(before: Pose, after: Pose, alpha: number, discontinuity = false, teleportDistance = 3): Pose {

@@ -1,6 +1,6 @@
 {
   "name": "zero-point-arena",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "main": "electron/main.cjs",
   "private": true,
   "engines": {

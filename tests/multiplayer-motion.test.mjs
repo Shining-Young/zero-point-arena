@@ -34,11 +34,68 @@ test('reconciles an acknowledged prediction without dragging the rendered player
     ],
     { x: 0, z: -0.40 },
     2,
+    3,
+    [],
   );
   assert.ok(Math.abs(result.position.z + 0.82) < 0.001);
   assert.equal(result.visualPosition.z, -0.84);
   assert.deepEqual(result.pending.map(item => item.sequence), [3]);
   assert.equal(result.snapped, false);
+});
+
+test('does not apply the same prediction correction again on the next acknowledgement', () => {
+  const first = motion.reconcilePrediction(
+    { x: 0, z: -0.84 },
+    { x: 0, z: -0.84 },
+    [
+      { sequence: 1, position: { x: 0, z: -0.21 } },
+      { sequence: 2, position: { x: 0, z: -0.42 } },
+      { sequence: 3, position: { x: 0, z: -0.63 } },
+    ],
+    { x: 0, z: -0.21 },
+    2,
+    3,
+    [],
+  );
+  assert.ok(Math.abs(first.position.z + 0.63) < 0.001);
+  assert.ok(Math.abs(first.pending[0].position.z + 0.42) < 0.001);
+
+  const second = motion.reconcilePrediction(
+    { x: 0, z: -0.84 },
+    first.visualPosition,
+    [...first.pending, { sequence: 4, position: { x: 0, z: -0.84 } }],
+    { x: 0, z: -0.42 },
+    3,
+    3,
+    [],
+  );
+  assert.ok(Math.abs(second.position.z + 0.84) < 0.001);
+});
+
+test('replays pending movement with collision instead of correcting into cover', () => {
+  const wall = [{ x: 0, z: 0, w: 1, d: 4, h: 3 }];
+  const result = motion.reconcilePrediction(
+    { x: -1, z: 0 },
+    { x: -1, z: 0 },
+    [{ sequence: 1, position: { x: -2, z: 0 } }],
+    { x: -1.2, z: 0 },
+    1,
+    3,
+    wall,
+  );
+  assert.ok(result.position.x < -0.9);
+});
+
+test('snaps the visual correction when a wall blocks its smoothing path', () => {
+  assert.equal(typeof motion.smoothVisualPosition, 'function');
+  const wall = [{ x: 0, z: 0, w: 1, d: 4, h: 3 }];
+  const result = motion.smoothVisualPosition(
+    { x: -1, z: 0 },
+    { x: 1, z: 0 },
+    0.5,
+    wall,
+  );
+  assert.deepEqual(result, { x: 1, z: 0 });
 });
 
 test('snaps both positions when the server respawns the player far away', () => {
