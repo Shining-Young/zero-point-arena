@@ -57,6 +57,9 @@ test('starts a match and publishes authoritative snapshots', async t => {
   await new Promise(resolve=>setTimeout(resolve,30)); a.send({ type:'start_match' });
   const snapshot = await a.waitFor('snapshot');
   assert.equal(snapshot.entities.length, 2);
+  a.send({ type:'fire', weapon:'rifle', sequence:1, yaw:0, pitch:0, clientTime:Date.now() });
+  const combat = await b.waitFor('combat_event');
+  assert.equal(combat.event, 'shot');
 });
 
 test('returns application errors for malformed JSON and closes oversized messages', async t => {

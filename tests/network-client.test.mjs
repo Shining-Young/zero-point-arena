@@ -27,3 +27,13 @@ test('samples snapshots around render time', () => {
   const result=sampleSnapshots([{serverTime:100},{serverTime:200}],150);
   assert.equal(result?.alpha,.5);assert.equal(result?.before.serverTime,100);assert.equal(result?.after.serverTime,200);
 });
+
+test('drops real-time gameplay input while disconnected instead of replaying a burst', () => {
+  const socket=new FakeSocket(),connection=new GameConnection({url:'ws://test/game',socketFactory:()=>socket});
+  connection.connect();
+  connection.send({type:'input',sequence:1,moveX:0,moveZ:1,yaw:0,pitch:0,jump:false,crouch:false,sprint:false,clientTime:1});
+  connection.send({type:'fire',weapon:'rifle',sequence:2,yaw:0,pitch:0,clientTime:1});
+  connection.send({type:'set_ready',ready:true});
+  socket.open();
+  assert.deepEqual(socket.sent.map(message=>message.type),['hello','set_ready']);
+});

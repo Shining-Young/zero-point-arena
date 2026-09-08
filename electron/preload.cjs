@@ -1,3 +1,3 @@
 const {contextBridge}=require('electron');
-contextBridge.exposeInMainWorld('zeroPoint',{platform:process.platform,releaseVersion:'0.2.0'});
+contextBridge.exposeInMainWorld('zeroPoint',{platform:process.platform,releaseVersion:'0.2.1'});
 

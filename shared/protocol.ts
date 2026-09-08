@@ -77,6 +77,7 @@ export type SnapshotEntity = {
   id: string; nickname: string; isBot: boolean; x: number; y: number; z: number;
   yaw: number; pitch: number; health: number; weapon: Weapon; ammo: number;
   reserve: number; kills: number; deaths: number; alive: boolean;
+  reloadLeft: number; spawnProtection: number;
 };
 export type ServerMessage =
   | { type: 'welcome'; playerId: string; reconnectToken: string; serverTime: number }

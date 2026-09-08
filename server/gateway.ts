@@ -82,7 +82,14 @@ export async function createGameServer(options:Options={}){
 
   const timer=setInterval(()=>{
     rooms.sweep();
-    for(const [code,simulation] of simulations){simulation.tick(1/20);if(simulation.tickNumber%2===0){const room=rooms.getRoom(code);if(!room){simulations.delete(code);continue;}for(const session of sessions.values())if(session.roomCode===code)send(session,{type:'snapshot',tick:simulation.tickNumber,serverTime:Date.now(),remainingSeconds:simulation.remainingSeconds,lastProcessedInput:session.playerId?simulation.players.get(session.playerId)?.lastInput:undefined,entities:simulation.snapshot()});}if(simulation.finished){broadcast(code,{type:'match_finished',winnerId:simulation.winnerId,reason:simulation.remainingSeconds<=0?'time':'score'});const room=rooms.getRoom(code);if(room)room.phase='finished';simulations.delete(code);}}
+    for(const [code,simulation] of simulations){
+      const room=rooms.getRoom(code);if(!room){simulations.delete(code);continue;}
+      simulation.tick(1/20);
+      for(const event of simulation.drainEvents())broadcast(code,{type:'combat_event',event:event.type,actorId:event.actorId,targetId:event.targetId,value:event.value});
+      const publishSnapshot=()=>{for(const session of sessions.values())if(session.roomCode===code)send(session,{type:'snapshot',tick:simulation.tickNumber,serverTime:Date.now(),remainingSeconds:simulation.remainingSeconds,lastProcessedInput:session.playerId?simulation.players.get(session.playerId)?.lastInput:undefined,entities:simulation.snapshot()});};
+      let published=false;if(simulation.tickNumber%2===0){publishSnapshot();published=true;}
+      if(simulation.finished){if(!published)publishSnapshot();broadcast(code,{type:'match_finished',winnerId:simulation.winnerId,reason:simulation.remainingSeconds<=0?'time':'score'});room.phase='finished';simulations.delete(code);}
+    }
   },50);timer.unref();
 
   await new Promise<void>((resolve,reject)=>{http.once('error',reject);http.listen(options.port??3001,options.host??'127.0.0.1',()=>resolve());});
