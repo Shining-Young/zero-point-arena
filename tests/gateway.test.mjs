@@ -23,7 +23,7 @@ async function opened(url) {
 test('reports application readiness and rejects other websocket paths', async t => {
   const server = await createGameServer({ port: 0 }); t.after(server.close);
   const response = await fetch(`${server.httpUrl}/health`);
-  assert.deepEqual(await response.json(), { ok: true, protocolVersion: 2, releaseVersion: '0.2.3' });
+  assert.deepEqual(await response.json(), { ok: true, protocolVersion: 3, releaseVersion: '0.2.4' });
   const bad = new WebSocket(`${server.wsBase}/wrong`);
   const status = await new Promise(resolve => bad.on('unexpected-response', (_req, res) => resolve(res.statusCode)));
   assert.equal(status, 404);
@@ -35,10 +35,10 @@ test('requires hello then creates, joins and broadcasts a room', async t => {
   t.after(() => { a.ws.close(); b.ws.close(); });
   a.send({ type: 'create_room', nickname: 'A', humanLimit: 2, botCount: 0, difficulty: 'easy' });
   assert.equal((await a.waitFor('error')).code, 'HELLO_REQUIRED');
-  a.send({ type: 'hello', protocolVersion: 2, releaseVersion: '0.2.3' });
+  a.send({ type: 'hello', protocolVersion: 3, releaseVersion: '0.2.4' });
   a.send({ type: 'create_room', nickname: 'A', humanLimit: 2, botCount: 0, difficulty: 'easy' });
   const room = await a.waitFor('room_state');
-  b.send({ type: 'hello', protocolVersion: 2, releaseVersion: '0.2.3' });
+  b.send({ type: 'hello', protocolVersion: 3, releaseVersion: '0.2.4' });
   b.send({ type: 'join_room', nickname: 'B', roomCode: room.roomCode });
   await b.waitFor('welcome');
   const joined = await b.waitFor('room_state');
@@ -49,7 +49,7 @@ test('starts a match and publishes authoritative snapshots', async t => {
   const server = await createGameServer({ port: 0 }); t.after(server.close);
   const a = await opened(`${server.wsBase}/game`), b = await opened(`${server.wsBase}/game`);
   t.after(() => { a.ws.close(); b.ws.close(); });
-  for (const c of [a,b]) c.send({ type:'hello', protocolVersion:2, releaseVersion:'0.2.3' });
+  for (const c of [a,b]) c.send({ type:'hello', protocolVersion:3, releaseVersion:'0.2.4' });
   a.send({ type:'create_room', nickname:'A', humanLimit:2, botCount:0, difficulty:'normal' });
   const room = await a.waitFor('room_state');
   b.send({ type:'join_room', nickname:'B', roomCode:room.roomCode }); await b.waitFor('room_state');
@@ -73,4 +73,24 @@ test('returns application errors for malformed JSON and closes oversized message
   huge.ws.send('x'.repeat(9000));
   assert.equal(await closed, 1009);
   malformed.ws.close();
+});
+
+test('network batches preserve shot pose, action order and final stopped position',async t=>{
+ const server=await createGameServer({port:0});t.after(server.close);
+ const a=await opened(server.wsBase+'/game'),b=await opened(server.wsBase+'/game');t.after(()=>{a.ws.close();b.ws.close();});
+ for(const c of[a,b])c.send({type:'hello',protocolVersion:3,releaseVersion:'0.2.4'});
+ a.send({type:'create_room',nickname:'A',humanLimit:2,botCount:0,difficulty:'normal'});
+ const room=await a.waitFor('room_state');b.send({type:'join_room',nickname:'B',roomCode:room.roomCode});await b.waitFor('welcome');
+ a.send({type:'set_ready',ready:true});b.send({type:'set_ready',ready:true});await new Promise(r=>setTimeout(r,30));a.send({type:'start_match'});
+ const initial=await a.waitFor('snapshot'),me=initial.entities.find(e=>e.nickname==='A');
+ const command=(sequence,moveZ)=>({type:'input',sequence,moveX:0,moveZ,yaw:0,pitch:0,jump:false,crouch:false,sprint:false,dt:.01,life:me.life,clientTime:Date.now()});
+ a.send({type:'input_batch',commands:[1,2,3,4,5].map(n=>command(n,1))});
+ a.send({type:'fire',sequence:6,weapon:'rifle',yaw:Math.PI/2,pitch:0,inputSequence:5,life:me.life,clientTime:Date.now()});
+ a.send({type:'input_batch',commands:[7,8,9,10,11].map(n=>command(n,0))});a.send({type:'reload'});
+ await new Promise(r=>setTimeout(r,350));
+ const events=a.messages.filter(m=>m.type==='combat_event'&&m.actorId===me.id);
+ assert.deepEqual(events.map(e=>e.event),['shot','reload']);assert.ok(Math.abs(events[0].end.z-(me.z-.23))<1e-7);
+ const snapshot=a.messages.filter(m=>m.type==='snapshot').at(-1),local=snapshot.entities.find(e=>e.id===me.id);
+ assert.equal(snapshot.lastProcessedInput,11);assert.equal(local.ammo,29);assert.ok(local.reloadLeft>0);assert.ok(Math.abs(local.z-(me.z-.23))<1e-8);
+ await new Promise(r=>setTimeout(r,150));const stopped=a.messages.filter(m=>m.type==='snapshot').at(-1).entities.find(e=>e.id===me.id);assert.equal(stopped.z,local.z);
 });

@@ -18,7 +18,7 @@ test('advances local prediction on every render frame', () => {
     positions.push(state.visualPosition.z);
   }
   assert.equal(new Set(positions).size, 60);
-  assert.ok(Math.abs(state.position.z + 4.2) < 0.01);
+  assert.ok(Math.abs(state.position.z + 4.6) < 0.01);
   assert.deepEqual(state.position, state.visualPosition);
 });
 

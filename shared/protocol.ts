@@ -43,11 +43,13 @@ const inputSchema = z.object({
   moveX: finite.min(-1).max(1), moveZ: finite.min(-1).max(1),
   yaw: finite, pitch: finite.min(-Math.PI / 2).max(Math.PI / 2),
   jump: z.boolean(), crouch: z.boolean(), sprint: z.boolean(),
+  aiming: z.boolean().optional(), dt: finite.min(.001).max(.05).optional(), life: sequence.optional(),
   clientTime: finite.nonnegative(),
 }).strict();
 
 const fireSchema = z.object({
   type: z.literal('fire'), weapon, sequence, yaw: finite,
+  inputSequence:z.number().int().min(-1).optional(),life:sequence.optional(),
   pitch: finite.min(-Math.PI / 2).max(Math.PI / 2), clientTime: finite.nonnegative(),
 }).strict();
 
@@ -57,6 +59,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('configure_room'), botCount: z.number().int().min(0).max(3), difficulty }).strict(),
   z.object({ type: z.literal('start_match') }).strict(),
   inputSchema, fireSchema,
+  z.object({type:z.literal('input_batch'),commands:z.array(inputSchema).min(1).max(16)}).strict(),
   z.object({ type: z.literal('reload') }).strict(),
   z.object({ type: z.literal('switch_weapon'), weapon }).strict(),
   z.object({ type: z.literal('leave_room') }).strict(),
@@ -78,9 +81,10 @@ export type SnapshotEntity = {
   yaw: number; pitch: number; health: number; weapon: Weapon; ammo: number;
   reserve: number; kills: number; deaths: number; alive: boolean;
   reloadLeft: number; spawnProtection: number;
+  velocityY:number;grounded:boolean;crouched:boolean;life:number;respawnLeft:number;lastShot?:number;
 };
 export type CombatEventMessage =
-  | { type:'combat_event';event:'shot';actorId:string;yaw:number;pitch:number }
+  | { type:'combat_event';event:'shot';actorId:string;yaw:number;pitch:number;end?:{x:number;y:number;z:number} }
   | { type:'combat_event';event:'hit'|'headshot'|'kill'|'reload'|'respawn';actorId:string;targetId?:string;value?:number };
 export type ServerMessage =
   | { type: 'welcome'; playerId: string; reconnectToken: string; serverTime: number }

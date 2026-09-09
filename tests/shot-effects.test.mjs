@@ -1,4 +1,13 @@
 import assert from 'node:assert/strict';
+import * as effects from '../lib/game/shot-effects.ts';
+
+test('near-wall muzzle tracer converges on the camera crosshair',()=>{
+  assert.equal(typeof effects.resolveAimShot,'function');
+  const wall=new THREE.Mesh(new THREE.BoxGeometry(10,10,.2),new THREE.MeshBasicMaterial());wall.position.z=-2;wall.updateMatrixWorld(true);
+  const shot=effects.resolveAimShot(new THREE.Vector3(),new THREE.Vector3(.23,-.2,-.8),new THREE.Vector3(0,0,-1),[wall],70);
+  assert.ok(Math.abs(shot.end.x)<1e-8);assert.ok(Math.abs(shot.end.y)<1e-8);
+  assert.ok(Math.abs(shot.end.z+1.9)<1e-7);
+});
 import test from 'node:test';
 import * as THREE from 'three';
 

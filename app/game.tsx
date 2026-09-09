@@ -6,10 +6,11 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { INITIAL, type ArenaGame, type Snapshot, type Difficulty, type Options } from '@/lib/game/engine';
 import { OBSTACLES } from '@/lib/game/rules';
+import { readSettings, saveSettings } from '@/lib/game/settings';
 
 const difficulties=[{id:'easy',label:'新兵',hint:'轻松热身'},{id:'normal',label:'标准',hint:'保持警惕'},{id:'hard',label:'精英',hint:'全力以赴'}] as const;
-const controls=[['W A S D','移动'],['鼠标','转向'],['左键 / 右键','射击 / 瞄准'],['R','换弹'],['1 / 2','切枪'],['SHIFT','冲刺'],['SPACE','跳跃'],['C / CTRL','蹲伏'],['ESC','暂停']];
-function Radar({state,large=false}:{state:Snapshot;large?:boolean}){
+const controls=[['W A S D','移动'],['鼠标','转向'],['左键 / 右键','射击 / 切换瞄准'],['R','换弹'],['1 / 2','切枪'],['SHIFT','冲刺'],['SPACE','跳跃'],['C / CTRL','蹲伏'],['ESC','暂停']];
+export function Radar({state,large=false}:{state:Pick<Snapshot,'x'|'z'|'yaw'|'bots'>;large?:boolean}){
   return <svg className={large?'radar large':'radar'} viewBox="-27 -27 54 54" aria-label="七号仓库地图，橙色箭头是你，红点是可见敌人" role="img">
     <defs><pattern id={large?'map-grid-lg':'map-grid'} width="4" height="4" patternUnits="userSpaceOnUse"><path d="M 4 0 L 0 0 0 4" fill="none" stroke="#a5bcb2" strokeWidth=".08" opacity=".2"/></pattern></defs>
     <rect x="-26" y="-26" width="52" height="52" fill="#152025"/>
@@ -24,16 +25,17 @@ function KeyGuide(){return <div className="key-guide">{controls.map(([key,label]
 export default function Game(){
   const mount=useRef<HTMLDivElement>(null),game=useRef<ArenaGame|null>(null);
   const [state,setState]=useState<Snapshot>(INITIAL),[ready,setReady]=useState(false),[error,setError]=useState('');
-  const [options,setOptions]=useState<Options>({difficulty:'normal',sensitivity:1,sound:true}),[notice,setNotice]=useState('');
+  const [options,setOptions]=useState<Options>(()=>({difficulty:'normal',...readSettings()})),[notice,setNotice]=useState('');
   useEffect(()=>{
     let cancelled=false;
     import('@/lib/game/engine').then(({ArenaGame:Engine})=>{
       if(cancelled||!mount.current)return;
-      try{game.current=new Engine(mount.current,setState);setReady(true);}catch(e){console.error(e);setError('三维场景未能启动。请使用支持 WebGL 的电脑浏览器，并开启硬件加速后刷新。');}
+      try{game.current=new Engine(mount.current,setState);game.current.configure({...options,...readSettings()});setReady(true);}catch(e){console.error(e);setError('三维场景未能启动。请使用支持 WebGL 的电脑浏览器，并开启硬件加速后刷新。');}
     }).catch(()=>setError('游戏资源加载失败，请刷新页面重试。'));
     return()=>{cancelled=true;game.current?.dispose();game.current=null;};
   },[]);
-  useEffect(()=>{game.current?.configure(options);},[options]);
+  useEffect(()=>{game.current?.configure(options);saveSettings(options);},[options]);
+  useEffect(()=>{const onKey=(event:KeyboardEvent)=>{if(event.code==='KeyM'&&!event.repeat&&['playing','respawn'].includes(state.phase))setOptions(o=>({...o,sound:!o.sound}));};document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);},[state.phase]);
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(timer);},[notice]);
   const toggleSound=()=>setOptions(o=>({...o,sound:!o.sound}));
   const fullscreen=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{setNotice('当前窗口不支持全屏，可在独立浏览器中打开游戏。');}};

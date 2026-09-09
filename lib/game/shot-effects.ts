@@ -10,6 +10,15 @@ export function resolveShotEnd(origin:THREE.Vector3,direction:THREE.Vector3,obje
   return ray.intersectObjects(objects,false)[0]?.point.clone()??ray.ray.at(range,new THREE.Vector3());
 }
 
+export function resolveAimShot(eye:THREE.Vector3,muzzle:THREE.Vector3,direction:THREE.Vector3,objects:THREE.Object3D[],range:number,targetPoint?:THREE.Vector3){
+  const target=targetPoint??resolveShotEnd(eye,direction,objects,range);
+  // Clamp the visible muzzle before nearby cover (including when the gun model protrudes).
+  const toMuzzle=muzzle.clone().sub(eye),start=resolveShotEnd(eye,toMuzzle,objects,toMuzzle.length());
+  if(start.distanceTo(muzzle)>.001)return {start,end:start.clone()};
+  const ray=target.clone().sub(start);
+  return {start,end:resolveShotEnd(start,ray,objects,ray.length())};
+}
+
 export type ShotEffect={root:THREE.Group;life:number;maxLife:number;materials:THREE.Material[];light:THREE.PointLight};
 
 export function spawnShotEffect(scene:THREE.Scene,start:THREE.Vector3,end:THREE.Vector3,enemy=false):ShotEffect{

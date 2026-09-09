@@ -12,7 +12,7 @@ import {
 const parse = value => parseClientMessage(JSON.stringify(value));
 
 test('accepts the core client messages', () => {
-  assert.equal(parse({ type: 'hello', protocolVersion: 2, releaseVersion: '1.0.0' }).type, 'hello');
+  assert.equal(parse({ type: 'hello', protocolVersion: 3, releaseVersion: '1.0.0' }).type, 'hello');
   assert.equal(parse({ type: 'create_room', nickname: ' Alice ', humanLimit: 4, botCount: 2, difficulty: 'normal' }).nickname, 'Alice');
   assert.equal(parse({ type: 'join_room', nickname: 'Bob', roomCode: 'ABC234' }).roomCode, 'ABC234');
   assert.equal(parse({ type: 'input', sequence: 1, moveX: 1, moveZ: -1, yaw: 0.5, pitch: 0, jump: false, crouch: false, sprint: true, clientTime: 100 }).type, 'input');
@@ -36,7 +36,7 @@ test('rejects malformed and non-finite data', () => {
 });
 
 test('rejects messages larger than the UTF-8 byte limit', () => {
-  const raw = JSON.stringify({ type: 'hello', protocolVersion: 2, releaseVersion: '测'.repeat(MAX_MESSAGE_BYTES) });
+  const raw = JSON.stringify({ type: 'hello', protocolVersion: 3, releaseVersion: '测'.repeat(MAX_MESSAGE_BYTES) });
   assert.ok(Buffer.byteLength(raw, 'utf8') > MAX_MESSAGE_BYTES);
   assert.throws(() => parseClientMessage(raw), error => error instanceof ProtocolError && error.code === 'MESSAGE_TOO_LARGE');
 });

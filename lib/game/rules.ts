@@ -30,14 +30,14 @@ export function moveActor(p:Point,dx:number,dz:number,obstacles:Obstacle[]=OBSTA
   }
   return {x,z};
 }
-export type MovementInput={moveX:number;moveZ:number;yaw:number;sprint:boolean;crouch:boolean;jump:boolean};
+export type MovementInput={moveX:number;moveZ:number;yaw:number;sprint:boolean;crouch:boolean;jump:boolean;aiming?:boolean};
 export type MovementState={y:number;velocityY:number;grounded:boolean;crouched?:boolean};
 export function forwardFromYaw(yaw:number){return {x:-Math.sin(yaw),z:-Math.cos(yaw)};}
 export function yawToward(from:Point,to:Point){return Math.atan2(from.x-to.x,from.z-to.z);}
 export function advanceActor(position:Point,input:MovementInput,state:MovementState,dt:number){
   const length=Math.hypot(input.moveX,input.moveZ), scale=length>1?1/length:1;
   const side=input.moveX*scale, forward=input.moveZ*scale;
-  const speed=input.crouch?2.2:input.sprint?6.2:4.2;
+  const speed=input.crouch?2.1:input.aiming?3:input.sprint?7.2:4.6;
   const sin=Math.sin(input.yaw),cos=Math.cos(input.yaw);
   const dx=(side*cos-forward*sin)*speed*dt;
   const dz=(-side*sin-forward*cos)*speed*dt;

@@ -19,7 +19,7 @@ export class GameConnection{
     socket.addEventListener('message',event=>{try{const message=parseServerMessage(String(event.data));if(message.type==='welcome'){this.playerId=message.playerId;this.reconnectToken=message.reconnectToken;this.storage?.setItem('zero-point-reconnect',message.reconnectToken);}if(message.type==='room_state')this.phase=message.phase==='playing'?'playing':'lobby';if(message.type==='match_started')this.phase='playing';if(message.type==='match_finished')this.phase='ended';if(message.type==='error'&&message.code==='VERSION_MISMATCH'){this.phase='ended';this.manual=true;}for(const listener of this.listeners)listener(message);}catch{}});
     socket.addEventListener('close',()=>{if(this.manual)return;this.phase='reconnecting';const delays=[1000,2000,4000,8000],delay=delays[Math.min(this.attempt++,delays.length-1)];this.timer=this.schedule(()=>this.connect(),delay);});
   }
-  send(message:ClientMessage){if(this.socket?.readyState===1)this.sendNow(message);else if(message.type!=='input'&&message.type!=='fire')this.queued.push(message);}
+  send(message:ClientMessage){if(this.socket?.readyState===1)this.sendNow(message);else if(!['input','input_batch','fire','reload','switch_weapon'].includes(message.type))this.queued.push(message);}
   subscribe(listener:(message:ServerMessage)=>void){this.listeners.add(listener);return()=>this.listeners.delete(listener);}
   close(){this.manual=true;if(this.timer)this.cancel(this.timer);this.socket?.close();this.phase='offline';}
   leave(){this.send({type:'leave_room'});this.storage?.removeItem('zero-point-reconnect');this.reconnectToken=undefined;this.close();}

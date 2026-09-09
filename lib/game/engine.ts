@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildWorld, makeRifle, makeSoldier, box } from './world';
 import { GameAudio } from './audio';
+import { WeaponPresentation } from './weapon-presentation';
 import { OBSTACLES, SPAWNS, moveActor, lineClear, findPath, reloadAmmo, matchOutcome, type Point } from './rules';
 
 export type Difficulty='easy'|'normal'|'hard';
@@ -10,13 +11,14 @@ export type Feed={id:number;attacker:string;victim:string;headshot:boolean};
 export type Snapshot={phase:Phase;health:number;kills:number;deaths:number;time:number;ammo:number;reserve:number;weapon:number;reloading:number;respawn:number;hit:number;hurt:number;aim:boolean;shots:number;hits:number;headshots:number;result:string|null;feed:Feed[];x:number;z:number;yaw:number;bots:{x:number;z:number;visible:boolean}[];protection:number;fallback:boolean;fps:number};
 export const INITIAL:Snapshot={phase:'menu',health:100,kills:0,deaths:0,time:300,ammo:30,reserve:120,weapon:0,reloading:0,respawn:0,hit:0,hurt:0,aim:false,shots:0,hits:0,headshots:0,result:null,feed:[],x:-19,z:19,yaw:0,bots:[],protection:0,fallback:false,fps:60};
 const WEAPONS=[{name:'AR-4',capacity:30,reserve:120,damage:29,rate:.105,reload:1.9,spread:.012},{name:'P-12',capacity:12,reserve:60,damage:39,rate:.27,reload:1.3,spread:.007}];
-const DIFFICULTY={easy:{speed:2.4,reaction:1.25,rate:.9,accuracy:.28,damage:12},normal:{speed:3.1,reaction:.85,rate:.65,accuracy:.42,damage:15},hard:{speed:3.8,reaction:.5,rate:.42,accuracy:.58,damage:19}};
+const DIFFICULTY={easy:{speed:2.4,reaction:1.25,rate:.9,accuracy:.28},normal:{speed:3.1,reaction:.85,rate:.65,accuracy:.42},hard:{speed:3.8,reaction:.5,rate:.42,accuracy:.58}};
 type Bot=ReturnType<typeof makeSoldier>&{id:number;health:number;dead:number;cooldown:number;noticed:number;path:Point[];repath:number;walk:number;spawnShield:number;lastSeen:Point|null};
 type Effect={mesh:THREE.Object3D;life:number;max:number};
 
 export class ArenaGame{
   scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(76,1,.06,160);renderer:THREE.WebGLRenderer;
   state:Snapshot={...INITIAL,feed:[],bots:[]};options:Options={difficulty:'normal',sensitivity:1,sound:true};
+  presentation=new WeaponPresentation();
   audio=new GameAudio();bots:Bot[]=[];solid:THREE.Object3D[]=[];effects:Effect[]=[];
   keys=new Set<string>();guns=[makeRifle(),makeRifle(true)];gunRig=new THREE.Group();
   ammo=[{ammo:30,reserve:120},{ammo:12,reserve:60}];
@@ -55,7 +57,7 @@ export class ArenaGame{
     this.resume();
   }
   resume(){
-    this.audio.init();this.keys.clear();this.shooting=false;this.aiming=false;
+    this.audio.init();this.keys.clear();this.shooting=false;this.aiming=false;this.presentation.reset();
     this.state.phase=this.state.health<=0?'respawn':'playing';this.state.fallback=false;
     void this.requestMouseLock();
     this.emit();
@@ -70,7 +72,7 @@ export class ArenaGame{
       this.state.fallback=true;this.emit();
     }
   }
-  pause(){if(!['playing','respawn'].includes(this.state.phase))return;this.state.phase='paused';this.keys.clear();this.shooting=false;this.aiming=false;this.dragging=false;if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.emit();}
+  pause(){if(!['playing','respawn'].includes(this.state.phase))return;this.state.phase='paused';this.keys.clear();this.shooting=false;this.aiming=false;this.presentation.reset();this.dragging=false;if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.emit();}
   menu(){this.pause();this.state.phase='menu';this.state.hit=0;this.state.hurt=0;this.emit();}
   bind(){
     const signal=this.abort.signal;
@@ -82,7 +84,6 @@ export class ArenaGame{
       if(e.code==='KeyR')this.reload();
       if(e.code==='Digit1')this.switchWeapon(0);if(e.code==='Digit2')this.switchWeapon(1);
       if(e.code==='Space'&&this.jump===0&&this.state.health>0)this.velocityY=5.5;
-      if(e.code==='KeyM'){this.audio.enabled=!this.audio.enabled;}
     },{signal});
     document.addEventListener('keyup',(e)=>this.keys.delete(e.code),{signal});
     document.addEventListener('mousemove',(e)=>{
@@ -91,22 +92,22 @@ export class ArenaGame{
       if(!locked&&!(this.state.fallback&&(e.target===this.renderer.domElement||this.dragging)))return;
       const s=.002*this.options.sensitivity*(this.aiming?.65:1);this.yaw-=e.movementX*s;this.pitch=Math.max(-1.4,Math.min(1.4,this.pitch-e.movementY*s));
     },{signal});
-    this.renderer.domElement.addEventListener('mousedown',(e)=>{if(this.state.phase!=='playing')return;e.preventDefault();if(this.state.fallback&&document.pointerLockElement!==this.renderer.domElement)void this.requestMouseLock();if(e.button===0)this.shooting=true;if(e.button===2){this.aiming=true;this.dragging=true;}},{signal});
-    document.addEventListener('mouseup',(e)=>{if(e.button===0)this.shooting=false;if(e.button===2){this.aiming=false;this.dragging=false;}},{signal});
+    this.renderer.domElement.addEventListener('mousedown',(e)=>{if(this.state.phase!=='playing')return;e.preventDefault();if(this.state.fallback&&document.pointerLockElement!==this.renderer.domElement)void this.requestMouseLock();if(e.button===0)this.shooting=true;if(e.button===2){this.presentation.toggleAim();this.aiming=this.presentation.aimIntent&&this.reloadLeft<=0;this.dragging=true;}},{signal});
+    document.addEventListener('mouseup',(e)=>{if(e.button===0)this.shooting=false;if(e.button===2){this.dragging=false;}},{signal});
     this.renderer.domElement.addEventListener('contextmenu',(e)=>e.preventDefault(),{signal});
     document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement===this.renderer.domElement){this.state.fallback=false;this.emit();}else if(!this.state.fallback)this.pause();},{signal});
     document.addEventListener('pointerlockerror',()=>{this.state.fallback=true;this.emit();},{signal});
     window.addEventListener('blur',()=>this.pause(),{signal});document.addEventListener('visibilitychange',()=>{if(document.hidden)this.pause();},{signal});
   }
-  switchWeapon(index:number){if(this.state.phase!=='playing'||this.state.weapon===index)return;this.reloadLeft=0;this.state.reloading=0;this.state.weapon=index;this.cooldown=.25;this.guns.forEach((g,i)=>g.visible=i===index);this.syncAmmo();this.audio.reload();}
+  switchWeapon(index:number){if(this.state.phase!=='playing'||this.state.weapon===index)return;this.presentation.reset();this.aiming=false;this.reloadLeft=0;this.state.reloading=0;this.state.weapon=index;this.cooldown=.25;this.guns.forEach((g,i)=>g.visible=i===index);this.syncAmmo();this.audio.reload();}
   syncAmmo(){Object.assign(this.state,this.ammo[this.state.weapon]);}
-  reload(){const w=WEAPONS[this.state.weapon],a=this.ammo[this.state.weapon];if(this.state.phase!=='playing'||this.reloadLeft>0||a.ammo===w.capacity||a.reserve===0)return;this.reloadTotal=w.reload;this.reloadLeft=w.reload;this.audio.reload();}
+  reload(){const w=WEAPONS[this.state.weapon],a=this.ammo[this.state.weapon];if(this.state.phase!=='playing'||this.reloadLeft>0||a.ammo===w.capacity||a.reserve===0)return;this.reloadTotal=w.reload;this.reloadLeft=w.reload;this.aiming=false;this.audio.reload();}
   spawnPlayer(safe=true){
     let p=SPAWNS[0];
     if(safe)p=[...SPAWNS].sort((a,b)=>this.safety(b)-this.safety(a))[0];
     this.state.x=p.x;this.state.z=p.z;this.state.health=100;this.state.protection=2.5;
     this.yaw=Math.atan2(p.x,p.z);this.pitch=0;this.jump=0;this.velocityY=0;this.recoil=0;
-    this.ammo=WEAPONS.map(w=>({ammo:w.capacity,reserve:w.reserve}));this.reloadLeft=0;this.state.reloading=0;this.cooldown=.3;this.syncAmmo();this.keys.clear();this.shooting=false;
+    this.ammo=WEAPONS.map(w=>({ammo:w.capacity,reserve:w.reserve}));this.reloadLeft=0;this.state.reloading=0;this.cooldown=.3;this.syncAmmo();this.keys.clear();this.shooting=false;this.aiming=false;this.presentation.reset();
   }
   safety(p:Point){return Math.min(...this.bots.filter(b=>b.health>0).map(b=>Math.hypot(p.x-b.root.position.x,p.z-b.root.position.z)),100);}
   respawnBot(b:Bot){
@@ -129,7 +130,7 @@ export class ArenaGame{
     const index=this.state.weapon,w=WEAPONS[index],a=this.ammo[index];
     if(this.cooldown>0||this.reloadLeft>0||this.state.health<=0)return;
     if(a.ammo<=0){this.reload();return;}
-    a.ammo--;this.syncAmmo();this.state.shots++;this.cooldown=w.rate;this.audio.shot();this.flashTime=.045;this.recoil=Math.min(this.recoil+.045,.12);
+    a.ammo--;this.syncAmmo();this.state.shots++;this.cooldown=w.rate;this.audio.shot();this.flashTime=.045;this.recoil=Math.min(this.recoil+.045,.12);this.presentation.shoot();
     const spread=w.spread*(this.aiming?.28:1)*(this.moving?2.4:1)*(this.jump>0?3:1)*(this.keys.has('ControlLeft')?.65:1);
     const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((Math.random()-.5)*spread,(Math.random()-.5)*spread),this.camera);
     this.scene.updateMatrixWorld(true);
@@ -168,8 +169,8 @@ export class ArenaGame{
           const succeeds=Math.random()<accuracy;
           const end=new THREE.Vector3(player.x,player.y-.12,player.z);if(!succeeds)end.add(new THREE.Vector3((Math.random()-.5)*4,1+Math.random()*2,(Math.random()-.5)*4));
           const from=b.root.localToWorld(b.muzzle.clone());this.tracer(from,end,true);
-          if(succeeds){this.state.health=Math.max(0,this.state.health-cfg.damage);this.state.hurt=1;
-            if(this.state.health<=0){this.state.deaths++;this.state.phase='respawn';this.state.respawn=3;this.shooting=false;this.aiming=false;this.reloadLeft=0;this.state.reloading=0;this.addFeed(`BOT ${String(b.id+1).padStart(2,'0')}`,'你');}
+          if(succeeds){this.state.health=Math.max(0,this.state.health-WEAPONS[0].damage);this.state.hurt=1;
+            if(this.state.health<=0){this.state.deaths++;this.state.phase='respawn';this.state.respawn=3;this.shooting=false;this.aiming=false;this.presentation.reset();this.reloadLeft=0;this.state.reloading=0;this.addFeed(`BOT ${String(b.id+1).padStart(2,'0')}`,'你');}
           }
         }
       }else{
@@ -190,6 +191,7 @@ export class ArenaGame{
     }
   }
   updatePlayer(dt:number){
+    this.aiming=this.presentation.aimIntent&&this.reloadLeft<=0;
     const crouch=this.keys.has('ControlLeft')||this.keys.has('ControlRight')||this.keys.has('KeyC');
     let forward=Number(this.keys.has('KeyW'))-Number(this.keys.has('KeyS')),right=Number(this.keys.has('KeyD'))-Number(this.keys.has('KeyA'));
     const length=Math.hypot(forward,right);if(length>0){forward/=length;right/=length;}this.moving=length>0;
@@ -203,13 +205,13 @@ export class ArenaGame{
     const bob=this.moving&&this.jump===0?Math.sin(this.clock*(sprint?14:10))*.035:0;
     this.camera.position.set(p.x,(crouch?1.05:1.68)+this.jump+bob,p.z);this.camera.rotation.set(this.pitch+this.recoil*.2,this.yaw,0);
     this.camera.updateMatrixWorld(true);this.state.yaw=this.yaw;this.state.aim=this.aiming;
-    const fov=this.aiming?51:76;this.camera.fov=THREE.MathUtils.damp(this.camera.fov,fov,12,dt);this.camera.updateProjectionMatrix();
+
     if(this.moving&&this.jump===0){this.stepTimer-=dt;if(this.stepTimer<=0){this.audio.step();this.stepTimer=sprint?.28:.42;}}
     if(this.shooting&&!sprint)this.shoot();
-    this.gunRig.position.x=THREE.MathUtils.damp(this.gunRig.position.x,this.aiming?.02:.28,14,dt);
-    this.gunRig.position.y=-.29+bob*.6-Math.sin(this.reloadLeft/Math.max(this.reloadTotal,.1)*Math.PI)*.3;
-    this.gunRig.position.z=-.5+this.recoil;
-    this.gunRig.rotation.set(this.recoil*.7,0,this.reloadLeft>0?-.4*Math.sin(this.reloadLeft/this.reloadTotal*Math.PI):sprint?-.3:0);
+    const pose=this.presentation.update(dt,{reloadLeft:this.reloadLeft,reloadTotal:this.reloadTotal,alive:this.state.health>0,sprint,bob});
+    this.camera.fov=pose.fov;this.camera.updateProjectionMatrix();
+    this.gunRig.position.set(pose.x,pose.y,pose.z);
+    this.gunRig.rotation.set(pose.rotationX,0,pose.rotationZ);
   }
   removeEffect(e:Effect){this.scene.remove(e.mesh);const m=e.mesh as THREE.Mesh;m.geometry?.dispose();if(m.material){const materials=Array.isArray(m.material)?m.material:[m.material];materials.forEach(mat=>mat.dispose());}}
   loop=(now:number)=>{
@@ -223,7 +225,7 @@ export class ArenaGame{
       else{this.state.respawn-=dt;this.camera.rotation.z=THREE.MathUtils.damp(this.camera.rotation.z,-.17,2,dt);if(this.state.respawn<=0){this.spawnPlayer();this.state.phase='playing';}}
       this.updateBots(dt);
       const result=matchOutcome(this.state.kills,this.state.deaths,this.state.time);
-      if(result){this.state.result=result;this.state.phase='finished';this.shooting=false;this.keys.clear();if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.audio.tone(result==='win'?700:220,.7,.09);this.emit();}
+      if(result){this.state.result=result;this.state.phase='finished';this.presentation.reset();this.aiming=false;this.shooting=false;this.keys.clear();if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.audio.tone(result==='win'?700:220,.7,.09);this.emit();}
       while(this.feedTimes.length&&this.clock-this.feedTimes[this.feedTimes.length-1]>6){this.feedTimes.pop();this.state.feed.pop();}
       for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.removeEffect(e);this.effects.splice(i,1);}}
     }

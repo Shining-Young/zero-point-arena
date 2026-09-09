@@ -9,6 +9,16 @@ export type LocalPrediction = {
 export type PendingPrediction = { sequence: number; position: Point };
 export type Pose = Point & { y: number; yaw: number };
 
+export type MovementCommand = MovementInput & {sequence:number;pitch:number;dt:number;clientTime:number;life:number};
+export class CommandPrediction {
+  position:Point={x:0,z:0};
+  movement:MovementState={y:0,velocityY:0,grounded:true,crouched:false};
+  pending:MovementCommand[]=[];
+  reset(state:Point&MovementState){this.position={x:state.x,z:state.z};this.movement={y:state.y,velocityY:state.velocityY,grounded:state.grounded,crouched:state.crouched};this.pending=[];}
+  step(command:MovementCommand){const next=advanceActor(this.position,command,this.movement,command.dt);this.position=next.position;this.movement=next.movement;this.pending.push(command);}
+  reconcile(state:Point&MovementState,ack:number){const pending=this.pending.filter(c=>c.sequence>ack);this.reset(state);for(const command of pending)this.step(command);}
+}
+
 export function advanceLocalPrediction(state: LocalPrediction, input: MovementInput, dt: number): LocalPrediction {
   const next = advanceActor(state.position, input, state.movement, dt);
   return {
