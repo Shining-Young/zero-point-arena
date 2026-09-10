@@ -76,3 +76,13 @@ test('removes empty playing rooms after 60 seconds', () => {
   manager.sweep(61_001);
   assert.equal(manager.getRoom(room.code), undefined);
 });
+
+test('three rounds keep room identity, roster and configuration but require fresh readiness',()=>{
+ const manager=new RoomManager(),{room,player:host}=manager.createRoom({nickname:'A',humanLimit:3,botCount:1,difficulty:'hard'}),{player:guest}=manager.joinRoom(room.code,{nickname:'B'});
+ for(let round=0;round<3;round++){
+  manager.setReady(room.code,host.id,true);manager.setReady(room.code,guest.id,true);manager.startMatch(room.code,host.id);room.phase='finished';
+  assert.throws(()=>manager.playAgain(room.code,guest.id),/NOT_HOST/);manager.playAgain(room.code,host.id);
+  const state=manager.roomState(room);assert.equal(state.phase,'lobby');assert.equal(state.roomCode,room.code);assert.deepEqual(state.players.map(p=>p.nickname),['A','B']);assert.equal(state.botCount,1);assert.equal(state.difficulty,'hard');assert.ok(state.players.every(p=>!p.ready));
+  assert.throws(()=>manager.startMatch(room.code,host.id),/NOT_READY/);
+ }
+});

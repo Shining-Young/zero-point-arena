@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { buildWorld, makeRifle, makeSoldier, box } from './world';
+import { ActorFeedback } from './actor-feedback';
+import { readMovementControls } from './controls';
 import { GameAudio } from './audio';
 import { WeaponPresentation } from './weapon-presentation';
 import { OBSTACLES, SPAWNS, moveActor, lineClear, findPath, reloadAmmo, matchOutcome, type Point } from './rules';
@@ -18,6 +20,7 @@ type Effect={mesh:THREE.Object3D;life:number;max:number};
 export class ArenaGame{
   scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(76,1,.06,160);renderer:THREE.WebGLRenderer;
   state:Snapshot={...INITIAL,feed:[],bots:[]};options:Options={difficulty:'normal',sensitivity:1,sound:true};
+  feedback=new Map<number,ActorFeedback>();
   presentation=new WeaponPresentation();
   audio=new GameAudio();bots:Bot[]=[];solid:THREE.Object3D[]=[];effects:Effect[]=[];
   keys=new Set<string>();guns=[makeRifle(),makeRifle(true)];gunRig=new THREE.Group();
@@ -42,7 +45,7 @@ export class ArenaGame{
     this.flashLight=new THREE.PointLight(0xffb657,0,4);this.flashLight.position.set(.1,0,-1);this.gunRig.add(this.flashLight);
     for(let i=0;i<4;i++){
       const b:Bot={...makeSoldier(i),id:i,health:100,dead:0,cooldown:1,noticed:0,path:[],repath:0,walk:0,spawnShield:0,lastSeen:null};
-      b.targets.forEach(t=>t.userData.bot=i);const s=SPAWNS[i+1];b.root.position.set(s.x,0,s.z);this.bots.push(b);this.scene.add(b.root);
+      b.targets.forEach(t=>t.userData.bot=i);const s=SPAWNS[i+1];b.root.position.set(s.x,0,s.z);this.bots.push(b);this.scene.add(b.root);this.feedback.set(i,new ActorFeedback(b.root,container,`BOT ${String(i+1).padStart(2,'0')}`,true));
     }
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(container);this.resize();this.bind();
     this.frame=requestAnimationFrame(this.loop);
@@ -139,7 +142,7 @@ export class ArenaGame{
     const end=hit?.point??ray.ray.at(65,new THREE.Vector3());
     this.tracer(this.gunRig.localToWorld(new THREE.Vector3(0,0,index===0?-1.1:-.26)),end);if(hit)this.spark(end,hit.object.userData.bot!==undefined);
     if(hit&&hit.object.userData.bot!==undefined){
-      const b=this.bots[hit.object.userData.bot];if(b.spawnShield>0)return;
+      const b=this.bots[hit.object.userData.bot];if(b.spawnShield>0){this.feedback.get(b.id)?.hit(true);return;}this.feedback.get(b.id)?.hit();
       const headshot=hit.object.userData.hit==='head';b.health-=w.damage*(headshot?3.7:1);b.lastSeen={x:this.state.x,z:this.state.z};b.repath=0;
       this.state.hits++;this.state.hit=headshot?2:1;this.audio.hit();
       if(b.health<=0){b.root.visible=false;b.dead=3;this.state.kills++;if(headshot)this.state.headshots++;this.addFeed('你',`BOT ${String(b.id+1).padStart(2,'0')}`,headshot);this.audio.kill();
@@ -195,7 +198,8 @@ export class ArenaGame{
     const crouch=this.keys.has('ControlLeft')||this.keys.has('ControlRight')||this.keys.has('KeyC');
     let forward=Number(this.keys.has('KeyW'))-Number(this.keys.has('KeyS')),right=Number(this.keys.has('KeyD'))-Number(this.keys.has('KeyA'));
     const length=Math.hypot(forward,right);if(length>0){forward/=length;right/=length;}this.moving=length>0;
-    const sprint=this.keys.has('ShiftLeft')&&this.moving&&!this.aiming&&!crouch;
+    const sprint=readMovementControls(this.keys,this.aiming).sprint;
+    if(sprint){this.presentation.aimIntent=false;this.presentation.aim=false;this.aiming=false;}
     const speed=crouch?2.1:sprint?7.2:this.aiming?3:4.6;
     if(this.keys.has('ArrowLeft'))this.yaw+=dt*1.8;if(this.keys.has('ArrowRight'))this.yaw-=dt*1.8;
     if(this.keys.has('ArrowUp'))this.pitch=Math.min(1.4,this.pitch+dt);if(this.keys.has('ArrowDown'))this.pitch=Math.max(-1.4,this.pitch-dt);
@@ -233,12 +237,13 @@ export class ArenaGame{
       this.camera.position.set(18+Math.sin(this.idle*.075)*2,12,21);this.camera.lookAt(-1,1,-3);this.camera.fov=64;this.camera.updateProjectionMatrix();this.gunRig.visible=false;
     }else this.gunRig.visible=this.state.health>0;
     this.flashTime-=dt;this.flash.visible=this.flashTime>0;this.flash.position.z=this.state.weapon===0?-1.16:-.27;this.flashLight.intensity=this.flashTime>0?4:0;
+    this.camera.updateMatrixWorld(true);for(const b of this.bots)this.feedback.get(b.id)?.update(this.camera,b.health>0,b.spawnShield);
     this.renderer.render(this.scene,this.camera);
     this.notifyElapsed+=dt;if(this.notifyElapsed>.075){this.state.fps=Math.round(1/Math.max(dt,.001));this.notifyElapsed=0;this.emit();}
     this.frame=requestAnimationFrame(this.loop);
   };
   dispose(){
-    this.disposed=true;cancelAnimationFrame(this.frame);this.abort.abort();this.resizeObserver.disconnect();if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.audio.dispose();
+    this.disposed=true;for(const effect of this.feedback.values())effect.dispose();this.feedback.clear();cancelAnimationFrame(this.frame);this.abort.abort();this.resizeObserver.disconnect();if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.audio.dispose();
     const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),textures=new Set<THREE.Texture>();
     this.scene.traverse(o=>{const mesh=o as THREE.Mesh;if(mesh.geometry)geometries.add(mesh.geometry);if(mesh.material)(Array.isArray(mesh.material)?mesh.material:[mesh.material]).forEach(m=>materials.add(m));});
     materials.forEach(m=>{for(const value of Object.values(m))if(value instanceof THREE.Texture)textures.add(value);m.dispose();});textures.forEach(t=>t.dispose());geometries.forEach(g=>g.dispose());this.renderer.dispose();this.renderer.domElement.remove();

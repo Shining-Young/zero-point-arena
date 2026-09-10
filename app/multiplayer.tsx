@@ -5,22 +5,29 @@ import { MultiplayerMatch } from './multiplayer-match';
 import { readSettings, saveSettings, type GameSettings } from '../lib/game/settings.ts';
 import { GameConnection } from '../lib/network/client.ts';
 import { MultiplayerGame,type MultiplayerHud } from '../lib/game/multiplayer.ts';
+import { resultForRoom, roomView, shouldDisposeMatchEngine } from './ui-state';
 
 const SERVER_URL=((import.meta as ImportMeta&{env?:Record<string,string>}).env?.VITE_GAME_SERVER_URL)??'ws://127.0.0.1:3001/game';
-const initialHud:MultiplayerHud={health:100,ammo:30,reserve:120,kills:0,deaths:0,remaining:300,latency:0,connected:false,weapon:'rifle',reloadLeft:0,alive:true,protection:0,aiming:false,hitMarker:0,headshot:false,hurt:0,result:null,menuOpen:true,leaderKills:0,leaderName:'领先对手',x:-19,z:19,yaw:0,enemies:[],feed:[],respawnLeft:0};
+const initialHud:MultiplayerHud={health:100,ammo:30,reserve:120,kills:0,deaths:0,remaining:300,latency:-1,connected:false,weapon:'rifle',reloadLeft:0,alive:true,protection:0,aiming:false,hitMarker:0,headshot:false,hurt:0,result:null,menuOpen:true,leaderKills:0,leaderName:'领先对手',x:-19,z:19,yaw:0,enemies:[],feed:[],respawnLeft:0};
 
 export default function Multiplayer({onBack}:{onBack:()=>void}){
   const connection=useMemo(()=>new GameConnection({url:SERVER_URL}),[]),mount=useRef<HTMLDivElement>(null),engine=useRef<MultiplayerGame|null>(null);
   const [nickname,setNickname]=useState(typeof localStorage==='undefined'?'':localStorage.getItem('zero-point-nickname')??''),[code,setCode]=useState(''),[botCount,setBotCount]=useState(0),[difficulty,setDifficulty]=useState<'easy'|'normal'|'hard'>('normal'),[room,setRoom]=useState<Extract<ServerMessage,{type:'room_state'}>>(),[playerId,setPlayerId]=useState(''),[status,setStatus]=useState('正在连接服务器…'),[hud,setHud]=useState(initialHud);
   const [settings,setSettings]=useState<GameSettings>(readSettings);
   useEffect(()=>{saveSettings(settings);engine.current?.configure(settings);},[settings]);
-  useEffect(()=>{const unsubscribe=connection.subscribe(message=>{if(message.type==='welcome'){setPlayerId(message.playerId);setStatus('已连接');}if(message.type==='room_state')setRoom(message);if(message.type==='error')setStatus(({ROOM_NOT_FOUND:'房间不存在，请检查房间码',ROOM_FULL:'房间已满',MATCH_ALREADY_STARTED:'比赛已经开始',VERSION_MISMATCH:'游戏版本不一致，请更新游戏'} as Record<string,string>)[message.code]??`服务器提示：${message.code}`);if(message.type==='match_started')setStatus('比赛开始');});connection.connect();return()=>{unsubscribe();engine.current?.dispose();connection.close();};},[connection]);
-  useEffect(()=>{if(room?.phase==='playing'&&playerId&&mount.current&&!engine.current){engine.current=new MultiplayerGame(mount.current,connection,playerId,setHud);engine.current.configure(readSettings());}},[room?.phase,playerId,connection]);
+  useEffect(()=>{const unsubscribe=connection.subscribe(message=>{if(message.type==='welcome'){setPlayerId(message.playerId);setStatus('已连接');}if(message.type==='room_state')setRoom(message);if(message.type==='error')setStatus(({ROOM_NOT_FOUND:'房间不存在，请检查房间码',ROOM_FULL:'房间已满',MATCH_ALREADY_STARTED:'比赛已经开始',VERSION_MISMATCH:'游戏版本不一致，请更新游戏'} as Record<string,string>)[message.code]??`服务器提示：${message.code}`);if(message.type==='match_started')setStatus('比赛开始');if(message.type==='match_finished')setHud(current=>({...current,menuOpen:false,result:message.winnerId===connection.playerId?'win':message.winnerId?'loss':'draw'}));});connection.connect();return()=>{unsubscribe();engine.current?.dispose();connection.close();};},[connection]);
+  useEffect(()=>{
+    if(room?.phase==='playing'&&playerId&&mount.current&&!engine.current){setHud(initialHud);engine.current=new MultiplayerGame(mount.current,connection,playerId,setHud);engine.current.configure(readSettings());return;}
+    if(shouldDisposeMatchEngine(room?.phase)&&engine.current){engine.current.dispose();engine.current=null;}
+  },[room?.phase,playerId,connection]);
   const validName=nickname.trim().length>=1&&nickname.trim().length<=16;const saveName=()=>localStorage.setItem('zero-point-nickname',nickname.trim());
   const sendCreate=()=>{if(!validName)return;saveName();connection.send({type:'create_room',nickname:nickname.trim(),humanLimit:4,botCount,difficulty});setStatus('正在创建房间…');};
   const sendJoin=()=>{if(!validName||!/^[A-HJ-NP-Z2-9]{6}$/.test(code))return;saveName();connection.send({type:'join_room',nickname:nickname.trim(),roomCode:code});setStatus('正在加入房间…');};
   const leave=()=>{engine.current?.dispose();engine.current=null;connection.leave();onBack();};
-  if(room?.phase==='playing')return <main className="game-shell phase-playing"><div ref={mount} className="viewport"/><MultiplayerMatch hud={hud} roomCode={room.roomCode} settings={settings} onSettings={setSettings} onOpen={()=>engine.current?.openSettings()} onResume={()=>engine.current?.resume()} onLeave={leave}/></main>;
+  if(room&&roomView(room.phase)==='match'){
+    const displayHud={...hud,result:resultForRoom(room.phase,hud.result)};
+    return <main className={`game-shell phase-${room.phase}`}><div ref={mount} className="viewport"/><MultiplayerMatch hud={displayHud} roomCode={room.roomCode} settings={settings} isHost={room.hostPlayerId===playerId} onSettings={setSettings} onOpen={()=>engine.current?.openSettings()} onResume={()=>engine.current?.resume()} onReturnToRoom={()=>connection.send({type:'play_again'})} onLeave={leave}/></main>;
+  }
   return <main className="multiplayer-screen"><section className="multiplayer-card"><small>INTERNET MULTIPLAYER</small><h1>互联网联机<span>.</span></h1><p className="server-status">{status}</p>{!room?<><label>你的昵称<input value={nickname} maxLength={16} onChange={e=>setNickname(e.target.value)} placeholder="1–16 个字符"/></label><div className="room-options"><label>人机补位<select value={botCount} onChange={e=>setBotCount(Number(e.target.value))}><option value="0">不添加</option><option value="1">1 名</option><option value="2">2 名</option><option value="3">3 名</option></select></label><label>人机难度<select value={difficulty} onChange={e=>setDifficulty(e.target.value as typeof difficulty)}><option value="easy">新兵</option><option value="normal">标准</option><option value="hard">精英</option></select></label></div><button className="primary-button" disabled={!validName} onClick={sendCreate}>创建房间</button><div className="join-row"><input aria-label="房间码" value={code} maxLength={6} onChange={e=>setCode(e.target.value.toUpperCase().replace(/[O0I1]/g,''))} placeholder="六位房间码"/><button disabled={!validName||code.length!==6} onClick={sendJoin}>加入</button></div><button className="text-button" onClick={()=>{connection.close();onBack();}}>返回模式选择</button></>:<Lobby room={room} playerId={playerId} connection={connection} onLeave={leave}/>}</section></main>;
 }
 

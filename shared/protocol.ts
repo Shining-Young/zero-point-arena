@@ -55,6 +55,8 @@ const fireSchema = z.object({
 
 export const clientMessageSchema = z.discriminatedUnion('type', [
   helloSchema, createRoomSchema, joinRoomSchema,
+  z.object({type:z.literal('ping'),clientTime:finite.nonnegative()}).strict(),
+  z.object({type:z.literal('resync_input')}).strict(),
   z.object({ type: z.literal('set_ready'), ready: z.boolean() }).strict(),
   z.object({ type: z.literal('configure_room'), botCount: z.number().int().min(0).max(3), difficulty }).strict(),
   z.object({ type: z.literal('start_match') }).strict(),
@@ -85,11 +87,13 @@ export type SnapshotEntity = {
 };
 export type CombatEventMessage =
   | { type:'combat_event';event:'shot';actorId:string;yaw:number;pitch:number;end?:{x:number;y:number;z:number} }
-  | { type:'combat_event';event:'hit'|'headshot'|'kill'|'reload'|'respawn';actorId:string;targetId?:string;value?:number };
+  | { type:'combat_event';event:'hit'|'headshot'|'kill'|'reload'|'respawn'|'shield';actorId:string;targetId?:string;value?:number };
 export type ServerMessage =
+  | {type:'pong';clientTime:number}
+  | {type:'input_resynced';entity:SnapshotEntity;lastProcessedInput:number}
   | { type: 'welcome'; playerId: string; reconnectToken: string; serverTime: number }
   | { type: 'room_state'; roomCode: string; hostPlayerId: string; phase: 'lobby' | 'playing' | 'finished'; humanLimit: number; botCount: number; difficulty: Difficulty; players: RoomPlayer[] }
-  | { type: 'snapshot'; tick: number; serverTime: number; remainingSeconds: number; lastProcessedInput?: number; entities: SnapshotEntity[] }
+  | { type: 'snapshot'; tick: number; serverTime: number; serverTickMs?:number; remainingSeconds: number; lastProcessedInput?: number; entities: SnapshotEntity[] }
   | CombatEventMessage
   | { type: 'match_started'; serverTime: number }
   | { type: 'match_finished'; winnerId?: string; reason: 'score' | 'time' }
@@ -112,7 +116,7 @@ export function encodeServerMessage(message: ServerMessage): string {
   return JSON.stringify(message);
 }
 
-const SERVER_TYPES = new Set(['welcome','room_state','snapshot','combat_event','match_started','match_finished','host_changed','error']);
+const SERVER_TYPES = new Set(['welcome','room_state','snapshot','combat_event','match_started','match_finished','host_changed','error','pong','input_resynced']);
 export function parseServerMessage(raw:string):ServerMessage{
   if(utf8Bytes(raw)>MAX_MESSAGE_BYTES)throw new ProtocolError('MESSAGE_TOO_LARGE');
   let value:unknown;try{value=JSON.parse(raw);}catch(error){throw new ProtocolError('BAD_MESSAGE',error);}

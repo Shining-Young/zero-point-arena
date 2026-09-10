@@ -7,7 +7,7 @@ const make=()=>new Promise((resolve,reject)=>{const ws=new WebSocket(endpoint),m
 const waitUntil=(client,predicate,label)=>new Promise((resolve,reject)=>{const until=Date.now()+20_000;const scan=()=>{const found=client.messages.find(predicate);if(found)resolve(found);else if(Date.now()>until)reject(new Error(`timeout ${label}`));else setTimeout(scan,50)};scan();});
 const a=await make(),b=await make();
 try{
-  for(const client of[a,b])client.send({type:'hello',protocolVersion:3,releaseVersion:'0.2.4'});
+  for(const client of[a,b])client.send({type:'hello',protocolVersion:4,releaseVersion:'0.2.5'});
   a.send({type:'create_room',nickname:'Public-A',humanLimit:4,botCount:1,difficulty:'normal'});const room=await a.wait('room_state');
   b.send({type:'join_room',nickname:'Public-B',roomCode:room.roomCode});await b.wait('welcome');
   a.send({type:'set_ready',ready:true});b.send({type:'set_ready',ready:true});await new Promise(resolve=>setTimeout(resolve,300));a.send({type:'start_match'});
@@ -21,5 +21,9 @@ try{
   const beforeFireTick=Math.max(...a.messages.filter(message=>message.type==='snapshot').map(message=>message.tick));
   a.send({type:'fire',weapon:'rifle',sequence:11,yaw:0,pitch:0,clientTime:Date.now()});
   const firedSnapshot=await waitUntil(a,message=>message.type==='snapshot'&&message.tick>beforeFireTick&&message.entities.find(entity=>entity.id===local.id)?.ammo===29,'fire snapshot');const fired=firedSnapshot.entities.find(entity=>entity.id===local.id);assert.equal(fired.ammo,29);
-  console.log(JSON.stringify({ok:true,endpoint,roomCode:room.roomCode,participants:first.entities.length,wForward:true,fire:true}));
+  a.send({type:'ping',clientTime:123});assert.equal((await a.wait('pong')).clientTime,123);
+  a.send({type:'resync_input'});const reset=await a.wait('input_resynced');assert.ok(reset.entity.life>local.life);
+  a.send({type:'input',sequence:20,moveX:0,moveZ:0,yaw:0,pitch:0,jump:false,crouch:false,sprint:false,dt:.01,life:reset.entity.life,clientTime:Date.now()});
+  await waitUntil(a,m=>m.type==='snapshot'&&m.lastProcessedInput===20,'input reset recovery');
+  console.log(JSON.stringify({ok:true,endpoint,roomCode:room.roomCode,participants:first.entities.length,wForward:true,fire:true,heartbeat:true,recovery:true}));
 }finally{a.ws.close();b.ws.close();}

@@ -40,12 +40,14 @@ export async function createGameServer(options:Options={}){
           if(message.reconnectToken){
             const restored=rooms.reconnect(message.reconnectToken,Date.now(),session.id);
             session.playerId=restored.player.id;session.roomCode=restored.room.code;
+            simulations.get(restored.room.code)?.resetInputs(restored.player.id);
             if(restored.evictedConnectionId){const old=sessions.get(restored.evictedConnectionId);old?.socket.close(4001,'Reconnected elsewhere');}
             welcome(session,restored.player);roomState(restored.room.code);
           }
           return;
         }
         if(!session.hello){error(session,'HELLO_REQUIRED');return;}
+        if(message.type==='ping'){send(session,{type:'pong',clientTime:message.clientTime});return;}
         if(message.type==='create_room'){
           if(session.playerId){error(session,'ALREADY_IN_ROOM');return;}
           const created=rooms.createRoom(message,session.id);session.playerId=created.player.id;session.roomCode=created.room.code;welcome(session,created.player);roomState(created.room.code);return;
@@ -65,34 +67,41 @@ export async function createGameServer(options:Options={}){
             for(let i=0;i<room.botCount;i+=1)participants.push({id:`bot-${i+1}`,nickname:`BOT ${String(i+1).padStart(2,'0')}`,x:i%2?19:-19,z:i<2?-19:19,isBot:true});
             simulations.set(room.code,new MatchSimulation(participants,{difficulty:room.difficulty}));broadcast(room.code,{type:'match_started',serverTime:Date.now()});roomState(room.code);break;
           }
-          case 'input':if(session.input.take())simulations.get(room.code)?.applyInput(session.playerId,message);break;
-          case 'input_batch':if(session.input.take())for(const command of message.commands)simulations.get(room.code)?.applyInput(session.playerId,command);break;
+          case 'input':if(session.input.take())simulations.get(room.code)?.applyInput(session.playerId,message);else error(session,'INPUT_RATE_LIMIT');break;
+          case 'input_batch':if(session.input.take())for(const command of message.commands)simulations.get(room.code)?.applyInput(session.playerId,command);else error(session,'INPUT_RATE_LIMIT');break;
+          case 'resync_input':{const sim=simulations.get(room.code);if(sim){sim.resetInputs(session.playerId);send(session,{type:'input_resynced',entity:sim.snapshot().find(p=>p.id===session.playerId)!,lastProcessedInput:sim.player(session.playerId).lastInput});}break;}
           case 'fire':simulations.get(room.code)?.queueFire(session.playerId,message);break;
           case 'reload':simulations.get(room.code)?.queueReload(session.playerId);break;
           case 'switch_weapon':simulations.get(room.code)?.queueSwitch(session.playerId,message.weapon);break;
           case 'play_again':rooms.playAgain(room.code,session.playerId);simulations.delete(room.code);roomState(room.code);break;
-          case 'leave_room':rooms.leaveRoom(room.code,session.playerId);session.playerId=undefined;session.roomCode=undefined;break;
+          case 'leave_room':rooms.leaveRoom(room.code,session.playerId);session.playerId=undefined;session.roomCode=undefined;roomState(room.code);break;
         }
       }catch(cause){
         const code=cause instanceof ProtocolError||cause instanceof RoomError?cause.code:'SERVER_ERROR';
         if(code==='MESSAGE_TOO_LARGE'){socket.close(1009,'Message too large');return;}error(session,code);
       }
     });
-    socket.on('close',()=>{sessions.delete(session.id);if(session.playerId){const room=rooms.disconnect(session.playerId);if(room)roomState(room.code);}});
+    socket.on('close',()=>{
+      sessions.delete(session.id);
+      const current=session.roomCode&&session.playerId?rooms.getRoom(session.roomCode)?.players.get(session.playerId):undefined;
+      if(session.playerId&&current?.connectionId===session.id){const room=rooms.disconnect(session.playerId);if(room)roomState(room.code);}
+    });
   });
 
+  let lastTick=performance.now();
   const timer=setInterval(()=>{
+    const now=performance.now(),serverTickMs=now-lastTick;lastTick=now;
     rooms.sweep();
     for(const [code,simulation] of simulations){
       const room=rooms.getRoom(code);if(!room){simulations.delete(code);continue;}
-      simulation.tick(1/20);
+      simulation.tick(Math.min(.25,Math.max(.001,serverTickMs/1000)));
       for(const event of simulation.drainEvents()){
         if(event.type==='shot')broadcast(code,{type:'combat_event',event:'shot',actorId:event.actorId,yaw:event.yaw,pitch:event.pitch,end:event.end});
         else broadcast(code,{type:'combat_event',event:event.type,actorId:event.actorId,targetId:event.targetId,value:event.value});
       }
-      const publishSnapshot=()=>{for(const session of sessions.values())if(session.roomCode===code)send(session,{type:'snapshot',tick:simulation.tickNumber,serverTime:Date.now(),remainingSeconds:simulation.remainingSeconds,lastProcessedInput:session.playerId?simulation.players.get(session.playerId)?.lastInput:undefined,entities:simulation.snapshot()});};
+      const publishSnapshot=()=>{const entities=simulation.snapshot();for(const session of sessions.values())if(session.roomCode===code)send(session,{type:'snapshot',tick:simulation.tickNumber,serverTime:Date.now(),serverTickMs,remainingSeconds:simulation.remainingSeconds,lastProcessedInput:session.playerId?simulation.players.get(session.playerId)?.lastInput:undefined,entities});};
       let published=false;if(simulation.tickNumber%2===0){publishSnapshot();published=true;}
-      if(simulation.finished){if(!published)publishSnapshot();broadcast(code,{type:'match_finished',winnerId:simulation.winnerId,reason:simulation.remainingSeconds<=0?'time':'score'});room.phase='finished';simulations.delete(code);}
+      if(simulation.finished){if(!published)publishSnapshot();broadcast(code,{type:'match_finished',winnerId:simulation.winnerId,reason:simulation.remainingSeconds<=0?'time':'score'});room.phase='finished';roomState(code);simulations.delete(code);}
     }
   },50);timer.unref();
 

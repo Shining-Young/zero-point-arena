@@ -24,7 +24,7 @@ export type SimPlayer = Participant & MovementState & {
 type SimulationOptions={scoreLimit?:number;matchSeconds?:number;difficulty?:Difficulty;now?:()=>number};
 type SimulationEvent=
   | {type:'shot';actorId:string;yaw:number;pitch:number;end?:{x:number;y:number;z:number}}
-  | {type:'hit'|'headshot'|'kill'|'reload'|'respawn';actorId:string;targetId?:string;value?:number};
+  | {type:'hit'|'headshot'|'kill'|'reload'|'respawn'|'shield';actorId:string;targetId?:string;value?:number};
 
 export class MatchSimulation {
   readonly players = new Map<string, SimPlayer>();
@@ -48,6 +48,12 @@ export class MatchSimulation {
   }
 
   player(id:string){const player=this.players.get(id);if(!player)throw new Error('PLAYER_NOT_FOUND');return player;}
+
+  resetInputs(id:string){
+    const p=this.player(id);p.queued=[];p.credit=0;p.life+=1;p.lastReceived=p.lastInput;
+    p.input={...p.input,moveX:0,moveZ:0,jump:false,sprint:false,aiming:false};
+    this.actions=this.actions.filter(action=>action.id!==id);
+  }
 
   applyInput(id:string,message:InputState){
     const player=this.player(id);if(!player.alive||message.sequence<=player.lastReceived||message.life!==undefined&&message.life!==player.life||player.queued.length>=100)return false;
@@ -82,6 +88,7 @@ export class MatchSimulation {
     const shot=traceWeaponShot(origin,message.yaw,message.pitch,shooter.weapon,Boolean(shooter.input.aiming),targets);
     this.events.push({type:'shot',actorId:id,yaw:message.yaw,pitch:message.pitch,end:shot.end});
     const best=shot.targetId?this.players.get(shot.targetId):undefined,bestHeadshot=shot.headshot;
+    if(best&&best.spawnProtection>0)this.events.push({type:'shield',actorId:id,targetId:best.id});
     if(best&&best.spawnProtection<=0){
       const damage=bestHeadshot?weapon.damage*4:weapon.damage;
       best.health=Math.max(0,best.health-damage);this.events.push({type:bestHeadshot?'headshot':'hit',actorId:id,targetId:best.id,value:damage});

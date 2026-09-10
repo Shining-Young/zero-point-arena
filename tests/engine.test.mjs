@@ -17,7 +17,7 @@ function harness(){
   const g=Object.create(ArenaGame.prototype);
   Object.assign(g,{state:{...INITIAL,phase:'playing',feed:[],bots:[]},options:{difficulty:'normal',sensitivity:1,sound:false},
     scene:new THREE.Scene(),camera:new THREE.PerspectiveCamera(76,1,.06,160),audio:quiet,presentation:new WeaponPresentation(),
-    bots:[],effects:[],solid:[],guns:[new THREE.Group(),new THREE.Group()],gunRig:new THREE.Group(),
+    feedback:new Map(),bots:[],effects:[],solid:[],guns:[new THREE.Group(),new THREE.Group()],gunRig:new THREE.Group(),
     keys:new Set(),ammo:[{ammo:30,reserve:120},{ammo:12,reserve:60}],cooldown:0,reloadLeft:0,
     recoil:0,clock:0,feedTimes:[],pitch:0,yaw:0,moving:false,aiming:false,
     callback(){},resume(){this.state.phase='playing';},flashTime:0});
