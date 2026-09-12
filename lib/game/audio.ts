@@ -1,3 +1,4 @@
+import type { WeaponId } from '../../shared/weapons.ts';
 export class GameAudio {
   context:AudioContext|null=null;
   enabled=true;
@@ -9,13 +10,13 @@ export class GameAudio {
     g.gain.setValueAtTime(volume,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+duration);
     o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+duration);
   }
-  shot(enemy=false){
+  shot(enemy=false,weapon:WeaponId='rifle'){
     if(!this.enabled||!this.context)return;
     const c=this.context,b=c.createBuffer(1,c.sampleRate*.13,c.sampleRate),data=b.getChannelData(0);
     for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,3);
     const s=c.createBufferSource(),g=c.createGain(),f=c.createBiquadFilter();
-    s.buffer=b;f.type='lowpass';f.frequency.value=enemy?900:2600;g.gain.value=enemy?.09:.24;
-    s.connect(f).connect(g).connect(c.destination);s.start();this.tone(enemy?90:140,.12,enemy?.025:.1,'triangle');
+    s.buffer=b;f.type='lowpass';f.frequency.value=(enemy?.45:1)*({pistol:3200,smg:2200,shotgun:1300,rifle:2600,sniper:950}[weapon]);g.gain.value=enemy?.09:.24;
+    s.connect(f).connect(g).connect(c.destination);s.start();this.tone(({pistol:180,smg:160,shotgun:70,rifle:140,sniper:55}[weapon])*(enemy?.65:1),weapon==='sniper'?.28:.12,enemy?.025:.1,'triangle');
   }
   step(){this.tone(75,.05,.026,'triangle');}
   hit(){this.tone(1050,.055,.05,'triangle');}

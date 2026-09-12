@@ -29,3 +29,10 @@ test('recoil recovers, and death or menu interrupts aim without restoring it',()
   p.toggleAim();p.update(.1,{...normal,blocked:true});assert.equal(p.update(.1,normal).aiming,false);
   p.toggleAim();p.reset();assert.equal(p.update(.1,normal).aiming,false);
 });
+
+test('sniper scope is narrower and shotgun kick stronger than an SMG',()=>{
+ const smg=new presentation.WeaponPresentation(),sniper=new presentation.WeaponPresentation();
+ assert.equal(typeof smg.configure,'function');smg.configure('smg');sniper.configure('sniper');smg.toggleAim();sniper.toggleAim();
+ const frame={reloadLeft:0,reloadTotal:3,alive:true};assert.ok(sniper.update(1,frame).fov<smg.update(1,frame).fov);
+ const shotgun=new presentation.WeaponPresentation();shotgun.configure('shotgun');shotgun.shoot();smg.shoot();assert.ok(shotgun.recoil>smg.recoil);
+});

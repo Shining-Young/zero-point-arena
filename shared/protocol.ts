@@ -1,3 +1,4 @@
+import type { Inventory,ShopResult } from './economy.ts';
 import { z } from 'zod';
 import { MAX_MESSAGE_BYTES, PROTOCOL_VERSION, RELEASE_VERSION } from './config.ts';
 
@@ -16,7 +17,7 @@ export class ProtocolError extends Error {
 const nickname = z.string().trim().min(1).max(16);
 const roomCode = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/);
 const difficulty = z.enum(['easy', 'normal', 'hard']);
-const weapon = z.enum(['rifle', 'pistol']);
+const weapon = z.enum(['pistol','smg','shotgun','rifle','sniper']);
 const finite = z.number().finite();
 const sequence = z.number().int().nonnegative();
 
@@ -61,6 +62,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('configure_room'), botCount: z.number().int().min(0).max(3), difficulty }).strict(),
   z.object({ type: z.literal('start_match') }).strict(),
   inputSchema, fireSchema,
+  z.object({type:z.literal('shop'),requestId:z.string().min(1).max(64),action:z.enum(['buy_weapon','buy_ammo','equip']),weapon}).strict(),
   z.object({type:z.literal('input_batch'),commands:z.array(inputSchema).min(1).max(16)}).strict(),
   z.object({ type: z.literal('reload') }).strict(),
   z.object({ type: z.literal('switch_weapon'), weapon }).strict(),
@@ -83,12 +85,14 @@ export type SnapshotEntity = {
   yaw: number; pitch: number; health: number; weapon: Weapon; ammo: number;
   reserve: number; kills: number; deaths: number; alive: boolean;
   reloadLeft: number; spawnProtection: number;
+  coins?:number;inventory?:Inventory;primary?:Weapon|null;canBuy?:boolean;buyBlockedReason?:string;shotHeat?:number;
   velocityY:number;grounded:boolean;crouched:boolean;life:number;respawnLeft:number;lastShot?:number;
 };
 export type CombatEventMessage =
-  | { type:'combat_event';event:'shot';actorId:string;yaw:number;pitch:number;end?:{x:number;y:number;z:number} }
+  | { type:'combat_event';event:'shot';actorId:string;yaw:number;pitch:number;end?:{x:number;y:number;z:number};ends?:{x:number;y:number;z:number}[] }
   | { type:'combat_event';event:'hit'|'headshot'|'kill'|'reload'|'respawn'|'shield';actorId:string;targetId?:string;value?:number };
 export type ServerMessage =
+  | ShopResult
   | {type:'pong';clientTime:number}
   | {type:'input_resynced';entity:SnapshotEntity;lastProcessedInput:number}
   | { type: 'welcome'; playerId: string; reconnectToken: string; serverTime: number }

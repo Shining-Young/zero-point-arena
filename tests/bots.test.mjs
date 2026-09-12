@@ -109,11 +109,16 @@ test('bot and human shots use identical body and head damage at every difficulty
   for(const difficulty of ['easy','normal','hard'])for(const pitch of [0,.03]){
     const health=[];
     for(const isBot of [false,true]){
-      const sim=new MatchSimulation([{id:'a',nickname:'A',x:8,z:-8,isBot},{id:'b',nickname:'B',x:8,z:-15}],{difficulty,now:()=>1000});
+      const sim=new RifleFixture([{id:'a',nickname:'A',x:8,z:-8,isBot},{id:'b',nickname:'B',x:8,z:-15}],{difficulty,now:()=>1000});
       sim.player('b').spawnProtection=0;
       assert.equal(sim.fire('a',{sequence:1,weapon:'rifle',yaw:0,pitch,clientTime:1000}),true);
       health.push(sim.player('b').health);
     }
-    assert.deepEqual(health,pitch===0?[71,71]:[0,0]);
+    assert.deepEqual(health,pitch===0?[70,70]:[0,0]);
   }
 });
+
+// Combat/motion fixtures explicitly arrange a purchased rifle and ammunition.
+class RifleFixture extends MatchSimulation {
+ constructor(...args){super(...args);for(const p of this.players.values()){p.coins=6000;this.buy(p.id,'buy_weapon','rifle','fixture-rifle');for(let n=0;n<4;n++)this.buy(p.id,'buy_ammo','rifle','fixture-ammo-'+n);p.cooldown=0;p.input.aiming=true;}}
+}

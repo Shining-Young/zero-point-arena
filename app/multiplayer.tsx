@@ -4,11 +4,11 @@ import type { RoomPlayer,ServerMessage } from '../shared/protocol.ts';
 import { MultiplayerMatch } from './multiplayer-match';
 import { readSettings, saveSettings, type GameSettings } from '../lib/game/settings.ts';
 import { GameConnection } from '../lib/network/client.ts';
-import { MultiplayerGame,type MultiplayerHud } from '../lib/game/multiplayer.ts';
+import { MultiplayerGame,INITIAL_HUD,type MultiplayerHud } from '../lib/game/multiplayer.ts';
 import { resultForRoom, roomView, shouldDisposeMatchEngine } from './ui-state';
 
 const SERVER_URL=((import.meta as ImportMeta&{env?:Record<string,string>}).env?.VITE_GAME_SERVER_URL)??'ws://127.0.0.1:3001/game';
-const initialHud:MultiplayerHud={health:100,ammo:30,reserve:120,kills:0,deaths:0,remaining:300,latency:-1,connected:false,weapon:'rifle',reloadLeft:0,alive:true,protection:0,aiming:false,hitMarker:0,headshot:false,hurt:0,result:null,menuOpen:true,leaderKills:0,leaderName:'领先对手',x:-19,z:19,yaw:0,enemies:[],feed:[],respawnLeft:0};
+const initialHud:MultiplayerHud={...INITIAL_HUD};
 
 export default function Multiplayer({onBack}:{onBack:()=>void}){
   const connection=useMemo(()=>new GameConnection({url:SERVER_URL}),[]),mount=useRef<HTMLDivElement>(null),engine=useRef<MultiplayerGame|null>(null);
@@ -26,7 +26,7 @@ export default function Multiplayer({onBack}:{onBack:()=>void}){
   const leave=()=>{engine.current?.dispose();engine.current=null;connection.leave();onBack();};
   if(room&&roomView(room.phase)==='match'){
     const displayHud={...hud,result:resultForRoom(room.phase,hud.result)};
-    return <main className={`game-shell phase-${room.phase}`}><div ref={mount} className="viewport"/><MultiplayerMatch hud={displayHud} roomCode={room.roomCode} settings={settings} isHost={room.hostPlayerId===playerId} onSettings={setSettings} onOpen={()=>engine.current?.openSettings()} onResume={()=>engine.current?.resume()} onReturnToRoom={()=>connection.send({type:'play_again'})} onLeave={leave}/></main>;
+    return <main className={`game-shell phase-${room.phase}`}><div ref={mount} className="viewport"/><MultiplayerMatch hud={displayHud} roomCode={room.roomCode} settings={settings} onShop={()=>engine.current?.openShop()} onBuy={(action,weapon)=>engine.current?.buy(action,weapon)} isHost={room.hostPlayerId===playerId} onSettings={setSettings} onOpen={()=>engine.current?.openSettings()} onResume={()=>engine.current?.resume()} onReturnToRoom={()=>connection.send({type:'play_again'})} onLeave={leave}/></main>;
   }
   return <main className="multiplayer-screen"><section className="multiplayer-card"><small>INTERNET MULTIPLAYER</small><h1>互联网联机<span>.</span></h1><p className="server-status">{status}</p>{!room?<><label>你的昵称<input value={nickname} maxLength={16} onChange={e=>setNickname(e.target.value)} placeholder="1–16 个字符"/></label><div className="room-options"><label>人机补位<select value={botCount} onChange={e=>setBotCount(Number(e.target.value))}><option value="0">不添加</option><option value="1">1 名</option><option value="2">2 名</option><option value="3">3 名</option></select></label><label>人机难度<select value={difficulty} onChange={e=>setDifficulty(e.target.value as typeof difficulty)}><option value="easy">新兵</option><option value="normal">标准</option><option value="hard">精英</option></select></label></div><button className="primary-button" disabled={!validName} onClick={sendCreate}>创建房间</button><div className="join-row"><input aria-label="房间码" value={code} maxLength={6} onChange={e=>setCode(e.target.value.toUpperCase().replace(/[O0I1]/g,''))} placeholder="六位房间码"/><button disabled={!validName||code.length!==6} onClick={sendJoin}>加入</button></div><button className="text-button" onClick={()=>{connection.close();onBack();}}>返回模式选择</button></>:<Lobby room={room} playerId={playerId} connection={connection} onLeave={leave}/>}</section></main>;
 }

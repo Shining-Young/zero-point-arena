@@ -27,7 +27,7 @@ export async function createGameServer(options:Options={}){
   const welcome=(session:Session,player:{id:string;reconnectToken:string})=>send(session,{type:'welcome',playerId:player.id,reconnectToken:player.reconnectToken,serverTime:Date.now()});
 
   wss.on('connection',(socket:WebSocket,_request:IncomingMessage)=>{
-    const session:Session={id:randomUUID(),socket,hello:false,all:new TokenBucket(60,60),input:new TokenBucket(30,30)};sessions.set(session.id,session);
+    const session:Session={id:randomUUID(),socket,hello:false,all:new TokenBucket(90,90),input:new TokenBucket(60,45)};sessions.set(session.id,session);
     socket.on('error',()=>{});
     socket.on('message',data=>{
       const raw=data.toString();
@@ -70,7 +70,8 @@ export async function createGameServer(options:Options={}){
           case 'input':if(session.input.take())simulations.get(room.code)?.applyInput(session.playerId,message);else error(session,'INPUT_RATE_LIMIT');break;
           case 'input_batch':if(session.input.take())for(const command of message.commands)simulations.get(room.code)?.applyInput(session.playerId,command);else error(session,'INPUT_RATE_LIMIT');break;
           case 'resync_input':{const sim=simulations.get(room.code);if(sim){sim.resetInputs(session.playerId);send(session,{type:'input_resynced',entity:sim.snapshot().find(p=>p.id===session.playerId)!,lastProcessedInput:sim.player(session.playerId).lastInput});}break;}
-          case 'fire':simulations.get(room.code)?.queueFire(session.playerId,message);break;
+          case 'shop':{const sim=simulations.get(room.code);const reply=(result:{ok:boolean;reason:string})=>send(session,{type:'shop_result',requestId:message.requestId,...result});if(sim)sim.queueBuy(session.playerId,message.action,message.weapon,message.requestId,reply);else reply({ok:false,reason:'NO_MATCH'});break;}
+            case 'fire':simulations.get(room.code)?.queueFire(session.playerId,message);break;
           case 'reload':simulations.get(room.code)?.queueReload(session.playerId);break;
           case 'switch_weapon':simulations.get(room.code)?.queueSwitch(session.playerId,message.weapon);break;
           case 'play_again':rooms.playAgain(room.code,session.playerId);simulations.delete(room.code);roomState(room.code);break;

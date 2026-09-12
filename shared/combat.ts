@@ -1,8 +1,9 @@
+import {WEAPONS,type WeaponId} from './weapons.ts';
 import { OBSTACLES,type Point3 } from '../lib/game/rules.ts';
 type Target=Point3&{id:string;alive:boolean;crouched?:boolean};
-export function traceWeaponShot(origin:Point3,yaw:number,pitch:number,weapon:'rifle'|'pistol',aiming:boolean,targets:Target[]){
- const hit=traceShot(origin,yaw,pitch,weapon==='rifle'?70:50,targets);
- const x=aiming?.02:.28,y=-.29,z=weapon==='rifle'?-1.27:-.682;
+export function traceWeaponShot(origin:Point3,yaw:number,pitch:number,weapon:WeaponId,aiming:boolean,targets:Target[]){
+ const hit=traceShot(origin,yaw,pitch,WEAPONS[weapon].range,targets);
+ const x=aiming?.02:.28,y=-.29,z=({pistol:-.682,smg:-1,shotgun:-1.35,rifle:-1.27,sniper:-1.55})[weapon];
  const ry=y*Math.cos(pitch)-z*Math.sin(pitch),rz=y*Math.sin(pitch)+z*Math.cos(pitch);
  const muzzle={x:origin.x+x*Math.cos(yaw)+rz*Math.sin(yaw),y:origin.y+ry,z:origin.z-x*Math.sin(yaw)+rz*Math.cos(yaw)};
  const segment=(a:Point3,b:Point3)=>{const dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z;return traceShot(a,Math.atan2(-dx,-dz),Math.atan2(dy,Math.hypot(dx,dz)),Math.hypot(dx,dy,dz),[]).end;};
@@ -31,4 +32,11 @@ export function traceShot(origin:Point3,yaw:number,pitch:number,range:number,tar
   if(along>0&&along<distance&&perpendicular<=.55&&hitY>=target.y+.2&&hitY<=target.y+1.98*scale){distance=along;targetId=target.id;headshot=hitY>=target.y+1.72*scale;}
  }
  return {end:{x:origin.x+direction.x*distance,y:origin.y+direction.y*distance,z:origin.z+direction.z*distance},targetId,headshot};
+}
+
+export function decayShotHeat(heat:number,weapon:WeaponId,dt:number){return Math.max(0,heat-WEAPONS[weapon].recovery*dt);}
+export function traceWeaponBurst(origin:Point3,yaw:number,pitch:number,weapon:WeaponId,aiming:boolean,targets:Target[],seed:number,moving=false,crouched=false,shotHeat=0){
+ let state=(seed^0x9e3779b9)>>>0;const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
+ const w=WEAPONS[weapon],spread=(aiming?w.adsSpread:w.spread)*(moving?1.8:1)*(crouched?.75:1)*(1+Math.min(3,shotHeat)*.25);
+ return Array.from({length:w.pellets},()=>{const radius=Math.sqrt(random())*spread,angle=random()*Math.PI*2;return traceWeaponShot(origin,yaw+Math.cos(angle)*radius,pitch+Math.sin(angle)*radius,weapon,aiming,targets);});
 }

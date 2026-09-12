@@ -94,12 +94,12 @@ export function makeRifle(pistol=false){
   const g=new THREE.Group(),metal=material(0x242c30,.7,.35),black=material(0x10191d,.25),edge=material(0x536069,.7,.3),orange=material(0xebaa55,.2);
   if(pistol){
     box(g,.115,.13,.4,0,0,0,metal);box(g,.12,.2,.13,0,-.14,.11,black).rotation.x=-.25;
-    box(g,.105,.04,.32,0,.085,-.02,edge);box(g,.13,.025,.05,0,.11,.12,orange);
+    box(g,.105,.04,.32,0,.085,-.02,edge).name='slide';box(g,.13,.025,.05,0,.11,.12,orange);
   }else{
     box(g,.16,.2,.53,0,0,0,metal);box(g,.13,.16,.45,0,.015,-.46,black);
     box(g,.06,.065,.36,0,.02,-.83,metal);box(g,.085,.08,.1,0,.02,-1.02,edge);
     box(g,.13,.22,.22,0,-.15,.38,black);box(g,.14,.13,.28,0,-.02,.29,black);
-    box(g,.105,.3,.17,0,-.24,-.06,metal).rotation.x=-.17;
+    const magazine=box(g,.105,.3,.17,0,-.24,-.06,metal);magazine.rotation.x=-.17;magazine.name='magazine-body';
     box(g,.095,.22,.12,0,-.19,.16,black).rotation.x=-.22;
     box(g,.18,.025,.46,0,.12,-.03,edge);
     for(let i=0;i<9;i++)box(g,.18,.018,.013,0,.14,-.22+i*.05,black);
@@ -109,7 +109,7 @@ export function makeRifle(pistol=false){
   }
   return g;
 }
-export function makeSoldier(index:number){
+export function makeSoldier(index:number,weapon:'pistol'|'smg'|'shotgun'|'rifle'|'sniper'='pistol'){
   const root=new THREE.Group(),suit=material(index%2?0x656f64:0x64757a),vest=material(0x293a41),skin=material(0xa99e89),black=material(0x18272d),accent=material(0xef704e);
   const torso=box(root,.68,.68,.35,0,1.17,0,suit);torso.userData.hit='body';
   box(root,.6,.47,.13,0,1.23,-.23,vest);box(root,.52,.07,.14,0,1.41,-.26,accent);
@@ -120,8 +120,60 @@ export function makeSoldier(index:number){
   legs.forEach((leg,i)=>{leg.position.set(i===0?-.19:.19,.86,0);box(leg,.26,.72,.28,0,-.35,0,suit);box(leg,.29,.16,.43,0,-.77,-.065,black);root.add(leg);});
   const armL=box(root,.23,.55,.25,-.43,1.13,-.06,suit);armL.rotation.x=-.7;
   const armR=box(root,.23,.5,.25,.4,1.18,-.16,suit);armR.rotation.x=-1;
-  const gun=makeRifle();gun.scale.setScalar(.7);gun.position.set(.25,1.23,-.35);root.add(gun);
+  const gun=makeWeapon(weapon);gun.name='held-weapon';gun.scale.setScalar(.7);gun.position.set(.25,1.23,-.35);root.add(gun);
   // A generous body volume keeps low-poly limbs from creating frustrating gaps.
   const hitbox=new THREE.Mesh(new THREE.BoxGeometry(.85,1.48,.5),new THREE.MeshBasicMaterial({visible:false}));hitbox.position.y=.79;hitbox.userData.hit='body';root.add(hitbox);
-  return {root,legs,targets:[head,hitbox],muzzle:new THREE.Vector3(.25,1.25,-1.08)};
+  return {root,legs,gun,targets:[head,hitbox],muzzle:new THREE.Vector3(.25,1.25,{pistol:-.5,smg:-.9,shotgun:-1.2,rifle:-1.08,sniper:-1.4}[weapon])};
+}
+
+/** Distinct silhouettes and movable action parts for the five-gun armory. */
+export function makeWeapon(id:'pistol'|'smg'|'shotgun'|'rifle'|'sniper'){
+ if(id==='rifle'||id==='pistol'){
+  const gun=makeRifle(id==='pistol');gun.userData.weapon=id;
+  const detail=material(id==='pistol'?0x9cadb5:0xd9aa65,.65,.3);
+  box(gun,.018,.055,id==='pistol'?.22:.38,.086,.03,-.1,detail);
+  const action=new THREE.Group();action.name='action';gun.add(action);box(action,.06,.055,.1,.095,.03,.01,detail);
+  const mag=new THREE.Group();mag.name='magazine';gun.add(mag);const original=gun.getObjectByName('magazine-body');if(original){gun.remove(original);mag.add(original);}else box(mag,.095,.14,.12,0,-.29,.1,material(0x2e3c45,.5));const slide=gun.getObjectByName('slide');if(slide){gun.remove(slide);action.add(slide);}
+  return gun;
+ }
+ const gun=new THREE.Group();gun.userData.weapon=id;
+ const metal=material(0x222e37,.75,.32),polymer=material(id==='smg'?0x627367:id==='shotgun'?0x8e6845:0x686b55,.1),edge=material(0xa7b8bd,.8,.24),black=material(0x10191d,.2);
+ const barrel=id==='smg'?.7:id==='shotgun'?1.2:1.48;
+ box(gun,id==='shotgun'?.17:.14,.18,.52,0,0,-.02,metal);
+ box(gun,.12,.15,.3,0,-.02,.37,polymer);box(gun,.14,.25,.08,0,-.08,.55,black);
+ box(gun,.10,.22,.13,0,-.18,.16,polymer).rotation.x=-.2;
+ box(gun,.055,.06,barrel-.18,0,.02,-barrel/2-.17,metal);box(gun,.085,.09,.12,0,.02,-barrel,black);
+ const action=new THREE.Group();action.name='action';gun.add(action);
+ const magazine=new THREE.Group();magazine.name='magazine';gun.add(magazine);
+ if(id==='smg'){
+  box(gun,.17,.14,.35,0,0,-.4,polymer);box(magazine,.085,.33,.13,0,-.24,-.08,black);
+  box(gun,.09,.1,.08,0,.13,-.18,black);box(gun,.035,.022,.025,0,.19,-.18,edge);
+  for(let i=0;i<5;i++)box(gun,.177,.016,.018,0,.08,-.29-i*.04,edge);
+  box(action,.055,.04,.1,.1,.04,-.02,edge);
+ }else if(id==='shotgun'){
+  box(gun,.07,.07,.76,0,-.07,-.63,metal);box(action,.19,.18,.35,0,-.04,-.55,polymer);
+  for(let i=0;i<6;i++)box(action,.196,.018,.02,0,.03,-.41-i*.05,black);
+  for(let i=0;i<4;i++)box(gun,.055,.08,.08,.12,.02,.13-i*.09,material(0xbd5541,.1));
+  box(gun,.035,.06,.035,0,.085,-1.05,edge);
+ }else{
+  box(gun,.14,.15,.52,0,-.025,-.5,polymer);box(magazine,.11,.19,.19,0,-.19,-.06,black);
+  box(gun,.075,.09,.24,0,.13,-.16,metal);
+  const scope=new THREE.Mesh(new THREE.CylinderGeometry(.082,.082,.43,16),black);scope.rotation.x=Math.PI/2;scope.position.set(0,.24,-.18);gun.add(scope);
+  const lens=new THREE.Mesh(new THREE.CircleGeometry(.072,16),new THREE.MeshStandardMaterial({color:0x64b7c5,metalness:.8,roughness:.15}));lens.position.set(0,.24,.037);gun.add(lens);
+  box(action,.16,.025,.035,.105,.07,.11,edge);box(action,.055,.075,.055,.19,.04,.11,black);
+  for(const x of [-.1,.1])box(gun,.025,.32,.025,x,-.15,-.78,metal).rotation.z=x>0?-.25:.25;
+ }
+ return gun;
+}
+export function animateWeapon(gun:THREE.Object3D,reloadProgress:number,cycling:number){
+ const action=gun.getObjectByName('action'),magazine=gun.getObjectByName('magazine'),id=gun.userData.weapon;
+ if(action)action.position.z=Math.sin(Math.max(0,Math.min(1,cycling))*Math.PI)*(id==='shotgun'?.18:id==='sniper'?.12:.035);
+ if(magazine)magazine.position.y=reloadProgress<1?-Math.sin(reloadProgress*Math.PI)*.28:0;
+}
+
+export function setSoldierWeapon(actor:ReturnType<typeof makeSoldier>,weapon:'pistol'|'smg'|'shotgun'|'rifle'|'sniper'){
+ if(actor.gun.userData.weapon===weapon)return;
+ actor.root.remove(actor.gun);const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();actor.gun.traverse(o=>{if(o instanceof THREE.Mesh){geometries.add(o.geometry);for(const m of Array.isArray(o.material)?o.material:[o.material])materials.add(m);}});for(const g of geometries)g.dispose();for(const m of materials)m.dispose();
+ const next=makeWeapon(weapon);next.position.copy(actor.gun.position);next.scale.copy(actor.gun.scale);actor.gun=next;actor.root.add(next);
+ actor.muzzle.z={pistol:-.5,smg:-.9,shotgun:-1.2,rifle:-1.08,sniper:-1.4}[weapon];
 }

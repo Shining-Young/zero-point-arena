@@ -3,7 +3,7 @@ import type { ConnectionPhase } from './store.ts';
 type StorageLike={getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void};
 type SocketLike={readyState:number;send(raw:string):void;close():void;addEventListener(type:string,listener:(event:any)=>void):void};
 type Options={url:string;socketFactory?:(url:string)=>SocketLike;storage?:StorageLike;now?:()=>number;setTimeout?:(fn:()=>void,ms:number)=>unknown;clearTimeout?:(id:unknown)=>void};
-const REALTIME=new Set(['input','input_batch','fire','reload','switch_weapon','resync_input','ping']);
+const REALTIME=new Set(['input','input_batch','fire','reload','switch_weapon','resync_input','ping','shop']);
 export class GameConnection{
  phase:ConnectionPhase='offline';playerId?:string;reconnectToken?:string;latency=-1;
  lastSnapshotAt=0;serverTickMs=50;recovering=false;

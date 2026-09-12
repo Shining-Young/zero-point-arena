@@ -30,5 +30,5 @@ export class ActorFeedback{
  dispose(){this.label.remove();this.root.remove(this.shield,this.band);this.shield.geometry.dispose();this.shield.material.dispose();this.band.geometry.dispose();(this.band.material as THREE.Material).dispose();}
 }
 export function disposeActor(root:THREE.Object3D){
- const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();root.traverse(o=>{if(o instanceof THREE.Mesh){geometries.add(o.geometry);for(const m of Array.isArray(o.material)?o.material:[o.material])materials.add(m);}});for(const g of geometries)g.dispose();for(const m of materials)m.dispose();
+ const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),textures=new Set<THREE.Texture>();root.traverse(o=>{if(o instanceof THREE.Mesh){geometries.add(o.geometry);for(const m of Array.isArray(o.material)?o.material:[o.material])materials.add(m);}});for(const g of geometries)g.dispose();for(const m of materials){for(const value of Object.values(m))if(value instanceof THREE.Texture)textures.add(value);m.dispose();}for(const texture of textures)texture.dispose();
 }

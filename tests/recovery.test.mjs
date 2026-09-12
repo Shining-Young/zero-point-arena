@@ -11,8 +11,8 @@ test('heartbeat measures real round trip and reconnects silent open sockets',()=
 });
 test('input recovery discards queued moves and actions and invalidates in-flight old-life commands',()=>{
  const sim=new MatchSimulation([{id:'a',nickname:'A',x:8,z:0}]);const p=sim.player('a');const input={sequence:1,moveX:0,moveZ:1,yaw:0,pitch:0,jump:false,crouch:false,sprint:false,dt:.01,life:p.life,clientTime:0};
- sim.applyInput('a',input);sim.queueFire('a',{sequence:2,weapon:'rifle',yaw:0,pitch:0,clientTime:0,inputSequence:1,life:p.life});
- assert.equal(typeof sim.resetInputs,'function');sim.resetInputs('a');assert.equal(sim.applyInput('a',{...input,sequence:3}),false);sim.tick(.05);assert.equal(p.z,0);assert.equal(p.ammo,30);assert.equal(p.life,1);
+ sim.applyInput('a',input);sim.queueFire('a',{sequence:2,weapon:'pistol',yaw:0,pitch:0,clientTime:0,inputSequence:1,life:p.life});
+ assert.equal(typeof sim.resetInputs,'function');sim.resetInputs('a');assert.equal(sim.applyInput('a',{...input,sequence:3}),false);sim.tick(.05);assert.equal(p.z,0);assert.equal(p.ammo,12);assert.equal(p.life,1);
 });
 test('both sprint keys override toggle aim only while moving and upright',()=>{
  assert.equal(typeof controls.readMovementControls,'function');

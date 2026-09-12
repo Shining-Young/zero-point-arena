@@ -1,3 +1,4 @@
+import {WEAPONS,type WeaponId} from '../shared/weapons.ts';
 import type { Difficulty } from '../shared/protocol.ts';
 import { findPath, lineClear, moveActor, yawToward, type MovementInput, type Point } from '../lib/game/rules.ts';
 
@@ -10,7 +11,7 @@ const BOT_SETTINGS = {
 export function botSettings(difficulty: Difficulty) { return BOT_SETTINGS[difficulty]; }
 
 export type BotTarget = Point & { id:string; y:number; alive:boolean; crouched?:boolean; isBot?:boolean };
-export type BotActor = BotTarget & { yaw:number; pitch:number; ammo:number; reserve:number; reloadLeft:number; cooldown:number };
+export type BotActor = BotTarget & { yaw:number; pitch:number; ammo:number; reserve:number; reloadLeft:number; cooldown:number; weapon?:WeaponId };
 export type BotDecision = { input:MovementInput; yaw:number; pitch:number; fire:boolean; reload:boolean; targetId?:string };
 type BotState = {
   targetId?:string; reactionLeft:number; burstLeft:number; restLeft:number;
@@ -87,7 +88,7 @@ export class BotController {
         }else state.pathLeft=0;
       }
     }
-    if(!seen||state.reactionLeft>0||dist>35||bot.reloadLeft>0||bot.ammo<=0)return decision;
+    if(!seen||state.reactionLeft>0||dist>(bot.weapon==='sniper'?WEAPONS.sniper.range:35)||bot.reloadLeft>0||bot.ammo<=0)return decision;
     if(state.restLeft>0){state.restLeft=Math.max(0,state.restLeft-dt);return decision;}
     if(state.burstLeft<=0)state.burstLeft=this.settings.burst*(.85+this.random()*.3);
     state.burstLeft-=dt;
